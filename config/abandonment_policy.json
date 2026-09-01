@@ -1,0 +1,39 @@
+{
+  "_comment": "Recovery policy for CHECKOUT ABANDONMENT - a customer who started checkout but never completed a payment attempt at all (no decline_code exists for this category by definition - see BUILD_LOG.md's dated checkout-abandonment section). Mirrors config/decline_policy.json's exact shape: one allowed_action per diagnosed abandonment_reason, edited directly by a merchant with no Python change and no redeploy. What each allowed_action actually does is explained in plain English right below in _action_glossary, same as decline_policy.json.",
+  "_action_glossary": {
+    "immediate_payment_link_resend": "Likely a technical hiccup (OTP/3-D Secure delay or failure) - the system immediately re-sends a fresh checkout link, since the underlying problem has probably already cleared by the time this runs.",
+    "payment_link_alternate_methods_nudge": "The customer's preferred payment method probably wasn't available or didn't work - the system sends a fresh checkout link whose message highlights the other payment methods accepted (UPI, other cards, netbanking), not just a bare retry.",
+    "discounted_incentive_nudge": "The customer likely balked at the price when they saw the total - the system sends a checkout link with a small incentive/discount message attached, to address price sensitivity specifically rather than just repeating the same offer.",
+    "delayed_nudge_no_discount": "The customer was probably just distracted/multitasking, not put off by anything about the checkout itself - the system sends a plain reminder with NO discount (nothing to fix, no need to pay them to come back), timed to arrive after they've likely returned to what they were doing.",
+    "no_action_respect_hesitation": "The customer showed signs of a genuine trust/security concern about entering payment details. The system takes NO automated action at all and leaves it to a human/marketing team to decide - an automated nudge to someone already hesitant about security risks looking pushy or, worse, more suspicious, not helpful.",
+    "no_action_low_value": "The abandoned cart's value is below the threshold where an automated recovery message is worth sending at all (messaging cost/customer-annoyance risk outweighs a very small cart's value) - not a per-reason policy, this is applied by the enforcement layer regardless of diagnosed reason.",
+    "no_action_stale_abandonment": "Too much time has passed since the cart was abandoned for a nudge to still be the right call (the review-then-buy window has almost certainly closed) - applied by the enforcement layer regardless of diagnosed reason, mirroring gate.py's stale-halt escalation rule for subscriptions.",
+    "no_action_needs_human_review": "A hard-block fallback (spending cap exceeded, or a duplicate action already run this session) - not a reason-driven policy choice, applied by the enforcement layer exactly like gate.py's own hard-block fallback action."
+  },
+  "_note_simulated_recovery_rate": "simulated_recovery_rate is used ONLY by generate_checkout_abandonment_data.py to fabricate realistic-looking outcomes for this project's synthetic test data, exactly like decline_policy.json's simulated_success_rate. It has no effect on the real gate decision or any real Razorpay call.",
+  "otp_delay_or_failure": {
+    "description": "The customer reached OTP/3-D Secure authentication but it timed out, failed, or never arrived - a technical/delivery problem, not a customer decision",
+    "allowed_action": "immediate_payment_link_resend",
+    "simulated_recovery_rate": 0.55
+  },
+  "payment_method_unsupported": {
+    "description": "The customer's preferred or only payment method was not accepted, or failed validation, at method-selection or card-entry stage",
+    "allowed_action": "payment_link_alternate_methods_nudge",
+    "simulated_recovery_rate": 0.40
+  },
+  "price_shock": {
+    "description": "The customer reached final review/confirm, saw the total amount, and abandoned - a price-sensitivity signal, not a technical failure",
+    "allowed_action": "discounted_incentive_nudge",
+    "simulated_recovery_rate": 0.35
+  },
+  "distraction_or_multitasking": {
+    "description": "Nothing about the checkout itself appears to have caused the abandonment - the customer was likely pulled away and is plausibly still interested",
+    "allowed_action": "delayed_nudge_no_discount",
+    "simulated_recovery_rate": 0.45
+  },
+  "trust_or_security_concern": {
+    "description": "Signals suggest the customer hesitated specifically over sharing payment details (often a new customer, often at the card-entry step) - pushing further risks looking predatory, not helpful",
+    "allowed_action": "no_action_respect_hesitation",
+    "simulated_recovery_rate": 0.0
+  }
+}

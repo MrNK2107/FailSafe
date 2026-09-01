@@ -1,0 +1,39 @@
+{
+  "_comment": "Recovery policy for OVERDUE RECEIVABLES - a B2B invoice that has gone unpaid past its due date (no decline_code exists for this category by definition - nobody attempted or declined a payment, an invoice simply aged past its due date - see BUILD_LOG.md's dated overdue-receivables section). Mirrors config/decline_policy.json's and config/abandonment_policy.json's exact shape: one allowed_action per diagnosed case_reason, edited directly by a merchant/collections team with no Python change and no redeploy. What each allowed_action actually does is explained in plain English right below in _action_glossary, same as the other two policy files.",
+  "_action_glossary": {
+    "friendly_reminder": "Low-friction nudge: the system sends a polite reminder with a fresh payment link, on the assumption the delay is administrative (wrong contact, invoice stuck in an approval queue) rather than a sign the business can't or won't pay - no discount, no pressure, no threat of escalation.",
+    "payment_plan_offer": "The business is judged to be in a genuine but temporary cash-flow crunch - the system sends a payment link framed around an installment/payment-plan option instead of demanding the full amount at once, to make paying easier rather than pushing harder.",
+    "firm_reminder_with_deadline": "This customer has a track record of paying late but reliably paying eventually - the system sends a firmer reminder naming a concrete deadline, more insistent than a friendly_reminder but still fully automated (a known-reliable payer does not need a human's attention yet).",
+    "no_action_needs_dispute_review": "Signals suggest the business disputes something about this invoice (the amount, delivery, service received). The system takes NO automated collections action at all - chasing payment on an invoice the customer believes is wrong is not just ineffective, it risks a real compliance/customer-relations problem; a human has to resolve the dispute first.",
+    "escalate_to_manual_collections": "Signals suggest a real risk of non-payment (a track record of chronic non-payment, or continued silence after prior reminders). The system stops automated nudging and hands this to a human account manager / collections process instead of continuing to send messages a chronic non-payer has already shown it ignores.",
+    "no_action_already_escalated": "This invoice has already had the maximum number of automated reminders (see MAX_REMINDERS_BEFORE_ESCALATION in receivables_gate.py) - a compliant-escalation stopping rule, not a per-reason policy choice: continuing to auto-chase past that cap is where automated collections activity stops being defensible, regardless of the diagnosed reason, and a human must take over.",
+    "no_action_stale_invoice_needs_legal_review": "This invoice is overdue past the staleness threshold (see DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD in receivables_gate.py) - at that age a routine automated nudge is no longer the right tool; the account needs a human/legal collections review, not another reminder. Applied by the enforcement layer regardless of diagnosed reason.",
+    "no_action_needs_human_review": "A hard-block fallback (spending cap exceeded, or a duplicate action already run this session) - not a reason-driven policy choice, applied by the enforcement layer exactly like gate.py's and abandonment_gate.py's own hard-block fallback action."
+  },
+  "_note_simulated_recovery_rate": "simulated_recovery_rate is used ONLY by generate_receivables_data.py to fabricate realistic-looking outcomes for this project's synthetic test data, exactly like decline_policy.json's simulated_success_rate and abandonment_policy.json's simulated_recovery_rate. It has no effect on the real gate decision or any real Razorpay call.",
+  "cash_flow_delay": {
+    "description": "The business is likely short on cash right now but intends to pay - a normal-sized invoice, early in the overdue window, no reminders sent yet",
+    "allowed_action": "payment_plan_offer",
+    "simulated_recovery_rate": 0.50
+  },
+  "payment_process_friction": {
+    "description": "The delay is probably administrative (invoice stuck in an approval workflow, sent to the wrong contact) rather than the business's ability or intent to pay - early in the overdue window, no reminders sent yet",
+    "allowed_action": "friendly_reminder",
+    "simulated_recovery_rate": 0.65
+  },
+  "chronic_late_payer_will_eventually_pay": {
+    "description": "This business has a track record of paying late but reliably paying eventually - treat as low-risk despite being overdue",
+    "allowed_action": "firm_reminder_with_deadline",
+    "simulated_recovery_rate": 0.60
+  },
+  "invoice_dispute_likely": {
+    "description": "Signals suggest the business disputes something about this invoice (amount, delivery, service) rather than being unable or unwilling to pay outright",
+    "allowed_action": "no_action_needs_dispute_review",
+    "simulated_recovery_rate": 0.0
+  },
+  "high_risk_non_payment": {
+    "description": "Signals suggest a real risk of non-payment - a track record of chronic non-payment, or continued silence after prior reminders, that warrants escalation rather than a routine nudge",
+    "allowed_action": "escalate_to_manual_collections",
+    "simulated_recovery_rate": 0.10
+  }
+}
