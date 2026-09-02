@@ -1,0 +1,377 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Recovery Policy - Merchant View</title>
+<style>
+  * { box-sizing:border-box; }
+  ::selection { background:#CFE6FF; color:#0B1E33; }
+  body { font: 14px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; background:#F6F8FB; color:#28384A; margin:0; padding:56px 64px; }
+  .page { max-width:1080px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:650; color:#0B1E33; margin:0 0 6px; letter-spacing:-.015em; }
+  .sub { color:#6B7A8C; margin-bottom:36px; max-width:760px; font-size:13px; }
+  h2 { font-size:12.5px; font-weight:650; color:#6B7A8C; text-transform:uppercase; letter-spacing:.07em; margin:0 0 16px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:1px; background:#E4E9F0;
+            border:1px solid #E4E9F0; border-radius:12px; overflow:hidden; margin-bottom:48px;
+            box-shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px -14px rgba(16,24,40,.14); }
+  .stat { background:#FFFFFF; padding:20px 24px; }
+  .stat .n { font-size:27px; font-weight:650; color:#0B1E33; font-variant-numeric:tabular-nums; }
+  .stat .l { color:#6B7A8C; font-size:11px; text-transform:uppercase; letter-spacing:.06em; margin-top:4px; }
+
+  .panel { background:#FFFFFF; border-radius:12px; padding:22px 24px;
+            box-shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px -16px rgba(16,24,40,.14); }
+  .charts { display:flex; gap:20px; flex-wrap:wrap; align-items:stretch; margin-bottom:48px; }
+  .chart-block { flex:1; min-width:300px; }
+  .bar-row { display:flex; align-items:center; gap:12px; margin:11px 0; }
+  .bar-row:first-of-type { margin-top:0; }
+  .bar-label { width:100px; flex-shrink:0; color:#3B4A5A; font-size:13px; }
+  .bar-track { flex:1; background:#EEF2F7; border-radius:4px; height:8px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:4px; }
+  .bar-value { width:26px; text-align:right; color:#6B7A8C; font-size:12px; font-weight:650; font-variant-numeric:tabular-nums; }
+
+  .donut-wrap { display:flex; gap:28px; align-items:center; flex-wrap:wrap; }
+  .donut { width:118px; height:118px; border-radius:50%; flex-shrink:0;
+            mask: radial-gradient(farthest-side, transparent calc(100% - 30px), #000 calc(100% - 30px));
+            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 30px), #000 calc(100% - 30px)); }
+  .legend-row { display:flex; align-items:center; gap:8px; font-size:13px; margin:7px 0; }
+  .swatch { width:8px; height:8px; border-radius:2px; flex-shrink:0; }
+  .legend-count { color:#6B7A8C; margin-left:auto; padding-left:18px; font-weight:650; font-variant-numeric:tabular-nums; }
+
+  .controls { display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start; margin:8px 0 20px; }
+  input#search { background:#F6F8FB; border:1px solid #E4E9F0; color:#28384A; padding:9px 13px; border-radius:8px; width:280px; font-size:13px; }
+  input#search:focus { outline:none; border-color:#3395FF; background:#FFFFFF; box-shadow:0 0 0 3px rgba(51,149,255,.15); }
+  .filter-group { display:flex; flex-direction:column; gap:7px; }
+  .filter-group .label { color:#6B7A8C; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+  .pill-row { display:flex; gap:6px; flex-wrap:wrap; }
+  .pill-btn { background:#FFFFFF; border:1px solid #E4E9F0; color:#3B4A5A; padding:5px 13px; border-radius:99px;
+               font-size:12px; cursor:pointer; transition:border-color .12s, color .12s; }
+  .pill-btn:hover { border-color:#3395FF; color:#0B1E33; }
+  .pill-btn.active { background:#3395FF; border-color:#3395FF; color:#fff; }
+
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px; margin-top:8px; }
+  .card { background:#FFFFFF; border-radius:12px; padding:18px 20px;
+           box-shadow:0 1px 2px rgba(16,24,40,.04), 0 6px 18px -12px rgba(16,24,40,.14);
+           transition:box-shadow .15s, transform .15s; }
+  .card:hover { box-shadow:0 1px 2px rgba(16,24,40,.05), 0 12px 28px -12px rgba(16,24,40,.18); transform:translateY(-1px); }
+  .card-top { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; }
+  .code-name { font-size:13px; color:#0B1E33; font-weight:650; }
+  .desc { color:#3B4A5A; font-size:13px; margin-bottom:12px; min-height:36px; }
+  .action-row { margin-bottom:10px; }
+  .pill { padding:3px 10px; border-radius:99px; font-weight:650; font-size:11.5px; white-space:nowrap; }
+  .explain { color:#6B7A8C; font-size:12.5px; margin-bottom:12px; }
+  .sim-note { color:#8B98A8; font-size:11px; border-top:1px solid #F0F3F7; padding-top:10px; font-variant-numeric:tabular-nums; }
+  .sim-caveat { font-style:italic; }
+  .empty { color:#6B7A8C; padding:24px; text-align:center; display:none; }
+  .note { color:#6B7A8C; font-size:12.5px; margin-top:40px; max-width:760px; line-height:1.65; }
+  .note b { color:#0B1E33; }
+</style></head>
+<body>
+<div class="page">
+<h1>Recovery Policy — Merchant View</h1>
+<div class="sub">Generated directly from <code>config/decline_policy.json</code> — the exact live policy the gate
+enforces, not a mockup or a separate copy. Read-only by design; see the note at the bottom for why.</div>
+
+<div class="stats">
+  <div class="stat"><div class="n">16</div><div class="l">Decline codes covered</div></div>
+  <div class="stat"><div class="n">4</div><div class="l">Failure sources</div></div>
+  <div class="stat"><div class="n">5</div><div class="l">Distinct actions used</div></div>
+</div>
+
+<div class="charts">
+  <div class="chart-block panel">
+    <h2>By who/what caused the failure</h2>
+    <div class="bar-row"><span class="bar-label">Customer</span><div class="bar-track"><div class="bar-fill" style="width:100.0%;background:#3395FF"></div></div><span class="bar-value">7</span></div><div class="bar-row"><span class="bar-label">Bank</span><div class="bar-track"><div class="bar-fill" style="width:100.0%;background:#B98900"></div></div><span class="bar-value">7</span></div><div class="bar-row"><span class="bar-label">Network</span><div class="bar-track"><div class="bar-fill" style="width:14.3%;background:#12845A"></div></div><span class="bar-value">1</span></div><div class="bar-row"><span class="bar-label">Gateway</span><div class="bar-track"><div class="bar-fill" style="width:14.3%;background:#6C4FD0"></div></div><span class="bar-value">1</span></div>
+  </div>
+  <div class="chart-block panel">
+    <h2>By what the system does about it</h2>
+    <div class="donut-wrap">
+      <div class="donut" style="background:conic-gradient(#12845A 0.00deg 67.50deg, #3395FF 67.50deg 112.50deg, #B98900 112.50deg 292.50deg, #D0342C 292.50deg 315.00deg, #5C6B7A 315.00deg 360.00deg)"></div>
+      <div><div class="legend-row"><span class="swatch" style="background:#12845A"></span><span>Immediate retry</span><span class="legend-count">3</span></div><div class="legend-row"><span class="swatch" style="background:#3395FF"></span><span>Delayed retry</span><span class="legend-count">2</span></div><div class="legend-row"><span class="swatch" style="background:#B98900"></span><span>Payment link nudge</span><span class="legend-count">8</span></div><div class="legend-row"><span class="swatch" style="background:#D0342C"></span><span>No action — fraud</span><span class="legend-count">1</span></div><div class="legend-row"><span class="swatch" style="background:#5C6B7A"></span><span>No action — unrecoverable</span><span class="legend-count">2</span></div></div>
+    </div>
+  </div>
+</div>
+
+<h2>Every decline code, in plain English</h2>
+<div class="controls">
+  <div class="filter-group">
+    <span class="label">Search</span>
+    <input id="search" placeholder="Search code or description...">
+  </div>
+  <div class="filter-group">
+    <span class="label">Source</span>
+    <div class="pill-row" id="sourceFilters">
+      <button class="pill-btn active" data-filter-source="all">All</button>
+      <button class="pill-btn" data-filter-source="bank">Bank</button><button class="pill-btn" data-filter-source="customer">Customer</button><button class="pill-btn" data-filter-source="gateway">Gateway</button><button class="pill-btn" data-filter-source="network">Network</button>
+    </div>
+  </div>
+  <div class="filter-group">
+    <span class="label">Action</span>
+    <div class="pill-row" id="actionFilters">
+      <button class="pill-btn active" data-filter-action="all">All</button>
+      <button class="pill-btn" data-filter-action="immediate_retry">Immediate retry</button><button class="pill-btn" data-filter-action="delayed_retry">Delayed retry</button><button class="pill-btn" data-filter-action="payment_link_nudge">Payment link nudge</button><button class="pill-btn" data-filter-action="no_action_fraud">No action — fraud</button><button class="pill-btn" data-filter-action="no_action_unrecoverable">No action — unrecoverable</button>
+    </div>
+  </div>
+</div>
+
+<div class="grid" id="cardGrid">
+
+<div class="card" data-code="authentication_failed" data-source="customer" data-action="payment_link_nudge"
+     data-search="authentication_failed Incorrect OTP entry or browser closure during verification">
+  <div class="card-top">
+    <code class="code-name">authentication_failed</code>
+    <span class="pill" style="background:#3395FF1A;color:#3395FF">customer</span>
+  </div>
+  <div class="desc">Incorrect OTP entry or browser closure during verification</div>
+  <div class="action-row">
+    <span class="pill" style="background:#B989001A;color:#B98900">Payment link nudge</span>
+  </div>
+  <div class="explain">Cannot be safely auto-retried - the customer needs to take an action themselves (e.g. enter a new card). The system sends them a secure payment link to fix it on their own.</div>
+  <div class="sim-note">Simulated success rate: 40% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="bank_technical_error" data-source="bank" data-action="immediate_retry"
+     data-search="bank_technical_error Customer&#x27;s bank experienced downtime">
+  <div class="card-top">
+    <code class="code-name">bank_technical_error</code>
+    <span class="pill" style="background:#B989001A;color:#B98900">bank</span>
+  </div>
+  <div class="desc">Customer&#x27;s bank experienced downtime</div>
+  <div class="action-row">
+    <span class="pill" style="background:#12845A1A;color:#12845A">Immediate retry</span>
+  </div>
+  <div class="explain">Usually a temporary glitch (network blip, bank downtime) - the system automatically retries the same charge right away. No customer contact needed.</div>
+  <div class="sim-note">Simulated success rate: 60% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="card_declined" data-source="bank" data-action="payment_link_nudge"
+     data-search="card_declined The payment was declined by the customer&#x27;s bank">
+  <div class="card-top">
+    <code class="code-name">card_declined</code>
+    <span class="pill" style="background:#B989001A;color:#B98900">bank</span>
+  </div>
+  <div class="desc">The payment was declined by the customer&#x27;s bank</div>
+  <div class="action-row">
+    <span class="pill" style="background:#B989001A;color:#B98900">Payment link nudge</span>
+  </div>
+  <div class="explain">Cannot be safely auto-retried - the customer needs to take an action themselves (e.g. enter a new card). The system sends them a secure payment link to fix it on their own.</div>
+  <div class="sim-note">Simulated success rate: 25% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="card_disabled_for_online_payments" data-source="customer" data-action="payment_link_nudge"
+     data-search="card_disabled_for_online_payments Card not enabled for online transaction use">
+  <div class="card-top">
+    <code class="code-name">card_disabled_for_online_payments</code>
+    <span class="pill" style="background:#3395FF1A;color:#3395FF">customer</span>
+  </div>
+  <div class="desc">Card not enabled for online transaction use</div>
+  <div class="action-row">
+    <span class="pill" style="background:#B989001A;color:#B98900">Payment link nudge</span>
+  </div>
+  <div class="explain">Cannot be safely auto-retried - the customer needs to take an action themselves (e.g. enter a new card). The system sends them a secure payment link to fix it on their own.</div>
+  <div class="sim-note">Simulated success rate: 30% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="card_expired" data-source="customer" data-action="payment_link_nudge"
+     data-search="card_expired Customer&#x27;s card has passed its expiration date">
+  <div class="card-top">
+    <code class="code-name">card_expired</code>
+    <span class="pill" style="background:#3395FF1A;color:#3395FF">customer</span>
+  </div>
+  <div class="desc">Customer&#x27;s card has passed its expiration date</div>
+  <div class="action-row">
+    <span class="pill" style="background:#B989001A;color:#B98900">Payment link nudge</span>
+  </div>
+  <div class="explain">Cannot be safely auto-retried - the customer needs to take an action themselves (e.g. enter a new card). The system sends them a secure payment link to fix it on their own.</div>
+  <div class="sim-note">Simulated success rate: 35% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="card_not_enrolled" data-source="bank" data-action="payment_link_nudge"
+     data-search="card_not_enrolled Card lacks activation for digital transactions">
+  <div class="card-top">
+    <code class="code-name">card_not_enrolled</code>
+    <span class="pill" style="background:#B989001A;color:#B98900">bank</span>
+  </div>
+  <div class="desc">Card lacks activation for digital transactions</div>
+  <div class="action-row">
+    <span class="pill" style="background:#B989001A;color:#B98900">Payment link nudge</span>
+  </div>
+  <div class="explain">Cannot be safely auto-retried - the customer needs to take an action themselves (e.g. enter a new card). The system sends them a secure payment link to fix it on their own.</div>
+  <div class="sim-note">Simulated success rate: 30% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="debit_instrument_blocked" data-source="bank" data-action="no_action_unrecoverable"
+     data-search="debit_instrument_blocked Card blocked by customer or bank">
+  <div class="card-top">
+    <code class="code-name">debit_instrument_blocked</code>
+    <span class="pill" style="background:#B989001A;color:#B98900">bank</span>
+  </div>
+  <div class="desc">Card blocked by customer or bank</div>
+  <div class="action-row">
+    <span class="pill" style="background:#5C6B7A1A;color:#5C6B7A">No action — unrecoverable</span>
+  </div>
+  <div class="explain">The customer cancelled, or the card is blocked/dead. Nothing left to try automatically - the case is closed instead of retried forever.</div>
+  <div class="sim-note">Simulated success rate: 0% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="debit_instrument_inactive" data-source="bank" data-action="payment_link_nudge"
+     data-search="debit_instrument_inactive Card not activated for online use">
+  <div class="card-top">
+    <code class="code-name">debit_instrument_inactive</code>
+    <span class="pill" style="background:#B989001A;color:#B98900">bank</span>
+  </div>
+  <div class="desc">Card not activated for online use</div>
+  <div class="action-row">
+    <span class="pill" style="background:#B989001A;color:#B98900">Payment link nudge</span>
+  </div>
+  <div class="explain">Cannot be safely auto-retried - the customer needs to take an action themselves (e.g. enter a new card). The system sends them a secure payment link to fix it on their own.</div>
+  <div class="sim-note">Simulated success rate: 25% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="gateway_technical_error" data-source="gateway" data-action="immediate_retry"
+     data-search="gateway_technical_error Partner bank downtime prevented payment processing">
+  <div class="card-top">
+    <code class="code-name">gateway_technical_error</code>
+    <span class="pill" style="background:#6C4FD01A;color:#6C4FD0">gateway</span>
+  </div>
+  <div class="desc">Partner bank downtime prevented payment processing</div>
+  <div class="action-row">
+    <span class="pill" style="background:#12845A1A;color:#12845A">Immediate retry</span>
+  </div>
+  <div class="explain">Usually a temporary glitch (network blip, bank downtime) - the system automatically retries the same charge right away. No customer contact needed.</div>
+  <div class="sim-note">Simulated success rate: 65% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="incorrect_cvv" data-source="customer" data-action="payment_link_nudge"
+     data-search="incorrect_cvv The customer entered an incorrect CVV">
+  <div class="card-top">
+    <code class="code-name">incorrect_cvv</code>
+    <span class="pill" style="background:#3395FF1A;color:#3395FF">customer</span>
+  </div>
+  <div class="desc">The customer entered an incorrect CVV</div>
+  <div class="action-row">
+    <span class="pill" style="background:#B989001A;color:#B98900">Payment link nudge</span>
+  </div>
+  <div class="explain">Cannot be safely auto-retried - the customer needs to take an action themselves (e.g. enter a new card). The system sends them a secure payment link to fix it on their own.</div>
+  <div class="sim-note">Simulated success rate: 45% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="insufficient_funds" data-source="customer" data-action="delayed_retry"
+     data-search="insufficient_funds The customer&#x27;s bank account did not have enough funds">
+  <div class="card-top">
+    <code class="code-name">insufficient_funds</code>
+    <span class="pill" style="background:#3395FF1A;color:#3395FF">customer</span>
+  </div>
+  <div class="desc">The customer&#x27;s bank account did not have enough funds</div>
+  <div class="action-row">
+    <span class="pill" style="background:#3395FF1A;color:#3395FF">Delayed retry</span>
+  </div>
+  <div class="explain">Usually a customer-side issue that tends to clear on its own with time (e.g. low balance before payday) - the system waits, then retries automatically later. No customer contact needed.</div>
+  <div class="sim-note">Simulated success rate: 55% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="payment_cancelled" data-source="customer" data-action="no_action_unrecoverable"
+     data-search="payment_cancelled Customer terminated the transaction or navigated away during processing">
+  <div class="card-top">
+    <code class="code-name">payment_cancelled</code>
+    <span class="pill" style="background:#3395FF1A;color:#3395FF">customer</span>
+  </div>
+  <div class="desc">Customer terminated the transaction or navigated away during processing</div>
+  <div class="action-row">
+    <span class="pill" style="background:#5C6B7A1A;color:#5C6B7A">No action — unrecoverable</span>
+  </div>
+  <div class="explain">The customer cancelled, or the card is blocked/dead. Nothing left to try automatically - the case is closed instead of retried forever.</div>
+  <div class="sim-note">Simulated success rate: 0% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="payment_failed" data-source="bank" data-action="payment_link_nudge"
+     data-search="payment_failed The payment was declined by the customer&#x27;s bank">
+  <div class="card-top">
+    <code class="code-name">payment_failed</code>
+    <span class="pill" style="background:#B989001A;color:#B98900">bank</span>
+  </div>
+  <div class="desc">The payment was declined by the customer&#x27;s bank</div>
+  <div class="action-row">
+    <span class="pill" style="background:#B989001A;color:#B98900">Payment link nudge</span>
+  </div>
+  <div class="explain">Cannot be safely auto-retried - the customer needs to take an action themselves (e.g. enter a new card). The system sends them a secure payment link to fix it on their own.</div>
+  <div class="sim-note">Simulated success rate: 20% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="payment_risk_check_failed" data-source="bank" data-action="no_action_fraud"
+     data-search="payment_risk_check_failed The customer&#x27;s bank declined the payment, citing it as fraudulent">
+  <div class="card-top">
+    <code class="code-name">payment_risk_check_failed</code>
+    <span class="pill" style="background:#B989001A;color:#B98900">bank</span>
+  </div>
+  <div class="desc">The customer&#x27;s bank declined the payment, citing it as fraudulent</div>
+  <div class="action-row">
+    <span class="pill" style="background:#D0342C1A;color:#D0342C">No action — fraud</span>
+  </div>
+  <div class="explain">The bank flagged this as suspected fraud. The system takes no automated action at all and hands it to a human to review - auto-retrying a fraud flag would be the wrong call, not just a wasted attempt.</div>
+  <div class="sim-note">Simulated success rate: 0% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="payment_timed_out" data-source="network" data-action="immediate_retry"
+     data-search="payment_timed_out The payment could not be completed as the customer exceeded the time limit">
+  <div class="card-top">
+    <code class="code-name">payment_timed_out</code>
+    <span class="pill" style="background:#12845A1A;color:#12845A">network</span>
+  </div>
+  <div class="desc">The payment could not be completed as the customer exceeded the time limit</div>
+  <div class="action-row">
+    <span class="pill" style="background:#12845A1A;color:#12845A">Immediate retry</span>
+  </div>
+  <div class="explain">Usually a temporary glitch (network blip, bank downtime) - the system automatically retries the same charge right away. No customer contact needed.</div>
+  <div class="sim-note">Simulated success rate: 50% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+<div class="card" data-code="transaction_limit_exceeded" data-source="customer" data-action="delayed_retry"
+     data-search="transaction_limit_exceeded The customer has already reached the maximum transaction limit for the day">
+  <div class="card-top">
+    <code class="code-name">transaction_limit_exceeded</code>
+    <span class="pill" style="background:#3395FF1A;color:#3395FF">customer</span>
+  </div>
+  <div class="desc">The customer has already reached the maximum transaction limit for the day</div>
+  <div class="action-row">
+    <span class="pill" style="background:#3395FF1A;color:#3395FF">Delayed retry</span>
+  </div>
+  <div class="explain">Usually a customer-side issue that tends to clear on its own with time (e.g. low balance before payday) - the system waits, then retries automatically later. No customer contact needed.</div>
+  <div class="sim-note">Simulated success rate: 60% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
+</div>
+</div>
+<div class="empty" id="emptyState">No decline codes match these filters.</div>
+
+<div class="note">
+  <b>Why this page is read-only, not an editable dashboard:</b> the policy below decides how real money-moving
+  actions get triggered, so letting anyone change it through a web form needs real access control (who's allowed
+  to edit) and an audit trail on the edit itself (who changed what, when) — neither of which this project has
+  built. Changing the actual policy still means editing <code>config/decline_policy.json</code> directly; that
+  file's own git history already serves as the audit trail for who changed what and when. See README.md's Known
+  Limitations for the full reasoning.
+</div>
+</div>
+
+<script>
+  var search = document.getElementById('search');
+  var sourceFilters = document.getElementById('sourceFilters');
+  var actionFilters = document.getElementById('actionFilters');
+  var cards = Array.prototype.slice.call(document.querySelectorAll('#cardGrid .card'));
+  var empty = document.getElementById('emptyState');
+
+  var state = { q: '', source: 'all', action: 'all' };
+
+  function applyFilters() {
+    var visible = 0;
+    cards.forEach(function(card) {
+      var matchesSearch = !state.q || card.dataset.search.toLowerCase().includes(state.q);
+      var matchesSource = state.source === 'all' || card.dataset.source === state.source;
+      var matchesAction = state.action === 'all' || card.dataset.action === state.action;
+      var show = matchesSearch && matchesSource && matchesAction;
+      card.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    empty.style.display = visible === 0 ? 'block' : 'none';
+  }
+
+  search.addEventListener('input', function(e) {
+    state.q = e.target.value.toLowerCase();
+    applyFilters();
+  });
+
+  function wirePillGroup(container, stateKey, datasetKey) {
+    container.addEventListener('click', function(e) {
+      var btn = e.target.closest('.pill-btn');
+      if (!btn) return;
+      container.querySelectorAll('.pill-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      state[stateKey] = btn.dataset[datasetKey];
+      applyFilters();
+    });
+  }
+
+  wirePillGroup(sourceFilters, 'source', 'filterSource');
+  wirePillGroup(actionFilters, 'action', 'filterAction');
+</script>
+</body></html>
