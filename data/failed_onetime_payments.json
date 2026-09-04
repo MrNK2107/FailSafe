@@ -1,0 +1,302 @@
+[
+  {
+    "payment_id": "pay_795245d0b11346",
+    "merchant_id": "merchant_003",
+    "customer_id": "cust_fb84f351b6",
+    "item": "Espresso Machine",
+    "amount_paise": 940647,
+    "currency": "INR",
+    "decline_code": "authentication_failed",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_759f8dc6379243",
+    "merchant_id": "merchant_006",
+    "customer_id": "cust_9c8c263d3f",
+    "item": "Backpack",
+    "amount_paise": 164719,
+    "currency": "INR",
+    "decline_code": "insufficient_funds",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_4c7b0111240d49",
+    "merchant_id": "merchant_007",
+    "customer_id": "cust_2111307b5a",
+    "item": "Espresso Machine",
+    "amount_paise": 783773,
+    "currency": "INR",
+    "decline_code": "card_declined",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_6a05d18049224a",
+    "merchant_id": "merchant_002",
+    "customer_id": "cust_016dd3195f",
+    "item": "Standing Desk",
+    "amount_paise": 1558677,
+    "currency": "INR",
+    "decline_code": "incorrect_cvv",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_a1f70f2678b546",
+    "merchant_id": "merchant_007",
+    "customer_id": "cust_69a5da410c",
+    "item": "Wireless Headphones",
+    "amount_paise": 285604,
+    "currency": "INR",
+    "decline_code": "card_declined",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_186e89b907b648",
+    "merchant_id": "merchant_005",
+    "customer_id": "cust_c8e5f5a34b",
+    "item": "Espresso Machine",
+    "amount_paise": 803859,
+    "currency": "INR",
+    "decline_code": "gateway_technical_error",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_d1bee0021f7b4a",
+    "merchant_id": "merchant_003",
+    "customer_id": "cust_c53952e0de",
+    "item": "Wireless Headphones",
+    "amount_paise": 256017,
+    "currency": "INR",
+    "decline_code": "authentication_failed",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_df9fc5f26a3341",
+    "merchant_id": "merchant_002",
+    "customer_id": "cust_bf4c6eb950",
+    "item": "Backpack",
+    "amount_paise": 164810,
+    "currency": "INR",
+    "decline_code": "incorrect_cvv",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_a50bb85d206741",
+    "merchant_id": "merchant_007",
+    "customer_id": "cust_a9fe51be85",
+    "item": "Running Shoes",
+    "amount_paise": 445257,
+    "currency": "INR",
+    "decline_code": "card_expired",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_e91f94865e6644",
+    "merchant_id": "merchant_004",
+    "customer_id": "cust_4bb1fc5202",
+    "item": "Standing Desk",
+    "amount_paise": 1589441,
+    "currency": "INR",
+    "decline_code": "incorrect_cvv",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_8c56b8111c4845",
+    "merchant_id": "merchant_008",
+    "customer_id": "cust_e32d0c8fbc",
+    "item": "Running Shoes",
+    "amount_paise": 480868,
+    "currency": "INR",
+    "decline_code": "insufficient_funds",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_275ac3517b6b4c",
+    "merchant_id": "merchant_002",
+    "customer_id": "cust_dc088eee50",
+    "item": "Backpack",
+    "amount_paise": 185235,
+    "currency": "INR",
+    "decline_code": "payment_risk_check_failed",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_30921c7576074b",
+    "merchant_id": "merchant_003",
+    "customer_id": "cust_03356753e5",
+    "item": "Espresso Machine",
+    "amount_paise": 878760,
+    "currency": "INR",
+    "decline_code": "payment_timed_out",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_ec1e2ee2acbf45",
+    "merchant_id": "merchant_006",
+    "customer_id": "cust_c8e14a2a85",
+    "item": "Running Shoes",
+    "amount_paise": 476259,
+    "currency": "INR",
+    "decline_code": "card_declined",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_997b68c378c546",
+    "merchant_id": "merchant_008",
+    "customer_id": "cust_f69878fd44",
+    "item": "Wireless Headphones",
+    "amount_paise": 275387,
+    "currency": "INR",
+    "decline_code": "insufficient_funds",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_518e2a5b2b9a46",
+    "merchant_id": "merchant_002",
+    "customer_id": "cust_876c0be82e",
+    "item": "Wireless Headphones",
+    "amount_paise": 267230,
+    "currency": "INR",
+    "decline_code": "incorrect_cvv",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_235bb05f94ae4c",
+    "merchant_id": "merchant_008",
+    "customer_id": "cust_6f617eb592",
+    "item": "Running Shoes",
+    "amount_paise": 479138,
+    "currency": "INR",
+    "decline_code": "insufficient_funds",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_ec12b0042b4e44",
+    "merchant_id": "merchant_008",
+    "customer_id": "cust_9b49f86a30",
+    "item": "Running Shoes",
+    "amount_paise": 405096,
+    "currency": "INR",
+    "decline_code": "authentication_failed",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_1d61f4292df643",
+    "merchant_id": "merchant_005",
+    "customer_id": "cust_b4ddb6c6c6",
+    "item": "Standing Desk",
+    "amount_paise": 1607156,
+    "currency": "INR",
+    "decline_code": "card_declined",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_84cacd09960341",
+    "merchant_id": "merchant_008",
+    "customer_id": "cust_ee660368e9",
+    "item": "Wireless Headphones",
+    "amount_paise": 224887,
+    "currency": "INR",
+    "decline_code": "card_not_enrolled",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_2a2079f76d9f44",
+    "merchant_id": "merchant_003",
+    "customer_id": "cust_339e4f92e9",
+    "item": "Espresso Machine",
+    "amount_paise": 998164,
+    "currency": "INR",
+    "decline_code": "authentication_failed",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_bd87b35d578842",
+    "merchant_id": "merchant_006",
+    "customer_id": "cust_55cc9f8e17",
+    "item": "Mechanical Keyboard",
+    "amount_paise": 724806,
+    "currency": "INR",
+    "decline_code": "incorrect_cvv",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_049952db304b46",
+    "merchant_id": "merchant_003",
+    "customer_id": "cust_cd5a3c2bf3",
+    "item": "Standing Desk",
+    "amount_paise": 1379288,
+    "currency": "INR",
+    "decline_code": "card_declined",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_175b1a55a31a42",
+    "merchant_id": "merchant_003",
+    "customer_id": "cust_4c3a234d1f",
+    "item": "Running Shoes",
+    "amount_paise": 420467,
+    "currency": "INR",
+    "decline_code": "incorrect_cvv",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_0a647e94b7fd48",
+    "merchant_id": "merchant_006",
+    "customer_id": "cust_68bf2dc878",
+    "item": "Standing Desk",
+    "amount_paise": 1585616,
+    "currency": "INR",
+    "decline_code": "insufficient_funds",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_3727673d603c4c",
+    "merchant_id": "merchant_001",
+    "customer_id": "cust_33c018e31b",
+    "item": "Espresso Machine",
+    "amount_paise": 1007761,
+    "currency": "INR",
+    "decline_code": "insufficient_funds",
+    "simulated_customer_response": false
+  },
+  {
+    "payment_id": "pay_c356ae235da94a",
+    "merchant_id": "merchant_007",
+    "customer_id": "cust_131d601259",
+    "item": "Espresso Machine",
+    "amount_paise": 872627,
+    "currency": "INR",
+    "decline_code": "bank_technical_error",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_84ec43ccdab74e",
+    "merchant_id": "merchant_001",
+    "customer_id": "cust_1213683229",
+    "item": "Standing Desk",
+    "amount_paise": 1305219,
+    "currency": "INR",
+    "decline_code": "card_expired",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_38e722ad07ec47",
+    "merchant_id": "merchant_006",
+    "customer_id": "cust_c4e3f45ed2",
+    "item": "Backpack",
+    "amount_paise": 164410,
+    "currency": "INR",
+    "decline_code": "card_declined",
+    "simulated_customer_response": true
+  },
+  {
+    "payment_id": "pay_23aa2ac47e704d",
+    "merchant_id": "merchant_002",
+    "customer_id": "cust_d7258b4fa6",
+    "item": "Running Shoes",
+    "amount_paise": 465251,
+    "currency": "INR",
+    "decline_code": "card_declined",
+    "simulated_customer_response": true
+  }
+]
