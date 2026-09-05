@@ -1,0 +1,36 @@
+Processing 30 overdue invoices...
+inv_d60c673820d442  true=chronic_late_payer_will_eventually_pay   diagnosed=chronic_late_payer_will_eventually_pay   [MATCH] -> no_action_needs_human_review
+inv_9084afb8c2d248  true=cash_flow_delay                          diagnosed=cash_flow_delay                          [MATCH] -> payment_plan_offer
+inv_8a93ce36d25344  true=chronic_late_payer_will_eventually_pay   diagnosed=cash_flow_delay                          [MISS ] -> no_action_needs_human_review
+inv_1f8da7d02a8141  true=chronic_late_payer_will_eventually_pay   diagnosed=chronic_late_payer_will_eventually_pay   [MATCH] -> firm_reminder_with_deadline
+inv_3aacca8eba6148  true=invoice_dispute_likely                   diagnosed=invoice_dispute_likely                   [MATCH] -> no_action_needs_dispute_review
+inv_69842c0f749c48  true=invoice_dispute_likely                   diagnosed=invoice_dispute_likely                   [MATCH] -> no_action_needs_dispute_review
+inv_d4b64e9131404f  true=payment_process_friction                 diagnosed=cash_flow_delay                          [MISS ] -> no_action_needs_human_review
+inv_69f5608ccf4140  true=payment_process_friction                 diagnosed=cash_flow_delay                          [MISS ] -> no_action_needs_human_review
+inv_aeb1e673745049  true=cash_flow_delay                          diagnosed=cash_flow_delay                          [MATCH] -> no_action_needs_human_review
+inv_d37a2e2cb0cd48  true=chronic_late_payer_will_eventually_pay   diagnosed=chronic_late_payer_will_eventually_pay   [MATCH] -> no_action_needs_human_review
+inv_9c6587bbc9da43  true=cash_flow_delay                          diagnosed=cash_flow_delay                          [MATCH] -> no_action_needs_human_review
+inv_940ce7a03f1548  true=chronic_late_payer_will_eventually_pay   diagnosed=chronic_late_payer_will_eventually_pay   [MATCH] -> firm_reminder_with_deadline
+inv_f087d88829c240  true=payment_process_friction                 diagnosed=cash_flow_delay                          [MISS ] -> no_action_needs_human_review
+inv_a8ff8624a8d541  true=chronic_late_payer_will_eventually_pay   diagnosed=chronic_late_payer_will_eventually_pay   [MATCH] -> no_action_needs_human_review
+inv_bf46fb4876b547  true=high_risk_non_payment                    diagnosed=high_risk_non_payment                    [MATCH] -> escalate_to_manual_collections
+inv_6fe3d33245ac48  true=chronic_late_payer_will_eventually_pay   diagnosed=cash_flow_delay                          [MISS ] -> payment_plan_offer
+inv_8a831f7acf1d46  true=invoice_dispute_likely                   diagnosed=invoice_dispute_likely                   [MATCH] -> no_action_needs_dispute_review
+inv_3a42989e09664b  true=high_risk_non_payment                    diagnosed=high_risk_non_payment                    [MATCH] -> escalate_to_manual_collections
+inv_0c7c5b63b17441  true=cash_flow_delay                          diagnosed=cash_flow_delay                          [MATCH] -> no_action_needs_human_review
+inv_aec19c294b464d  true=payment_process_friction                 diagnosed=payment_process_friction                 [MATCH] -> no_action_needs_human_review
+inv_ad7f8b84e6bb47  true=invoice_dispute_likely                   diagnosed=high_risk_non_payment                    [MISS ] -> escalate_to_manual_collections
+inv_047b195e51ef4b  true=cash_flow_delay                          diagnosed=cash_flow_delay                          [MATCH] -> no_action_needs_human_review
+inv_4b4e1ad87bf347  true=cash_flow_delay                          diagnosed=cash_flow_delay                          [MATCH] -> payment_plan_offer
+inv_621bb1c2c0cd4b  true=chronic_late_payer_will_eventually_pay   diagnosed=chronic_late_payer_will_eventually_pay   [MATCH] -> no_action_needs_human_review
+inv_7ae3013a610944  true=chronic_late_payer_will_eventually_pay   diagnosed=chronic_late_payer_will_eventually_pay   [MATCH] -> no_action_needs_human_review
+inv_cb71c485ad4e44  true=cash_flow_delay                          diagnosed=cash_flow_delay                          [MATCH] -> no_action_needs_human_review
+inv_724c5407295c4e  true=invoice_dispute_likely                   diagnosed=invoice_dispute_likely                   [MATCH] -> no_action_needs_dispute_review
+inv_526e022bc0cc46  true=cash_flow_delay                          diagnosed=cash_flow_delay                          [MATCH] -> no_action_needs_human_review
+inv_3bfe06ba4f3448  true=cash_flow_delay                          diagnosed=cash_flow_delay                          [MATCH] -> no_action_needs_human_review
+inv_39916565c81245  true=cash_flow_delay                          diagnosed=cash_flow_delay                          [MATCH] -> payment_plan_offer
+
+Wrote C:\razorpay\RECEIVABLES_RESULTS.md
+
+Diagnosis accuracy: 24/30 (80.0%)
+Final-action changed by misdiagnosis: 6/30
