@@ -1,41 +1,77 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Subscription Recovery Agent - Report</title>
+<html><head><meta charset="utf-8"><title>FailSafe — Audit Report</title>
 <style>
   * { box-sizing:border-box; }
-  ::selection { background:#CFE6FF; color:#0B1E33; }
-  body { font: 14px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; background:#F6F8FB; color:#28384A; margin:0; padding:56px 64px; }
+  ::selection { background:#2B84EB; color:#FFFFFF; }
+  body {
+    font: 14px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+    background:#061C3F;
+    background-image:
+      radial-gradient(1100px 460px at 12% -8%, rgba(43,132,235,.30), transparent 60%),
+      radial-gradient(900px 420px at 96% 0%, rgba(90,169,245,.16), transparent 55%);
+    background-repeat:no-repeat;
+    color:#F2F7FD; margin:0; padding:56px 64px; min-height:100vh;
+  }
   .page { max-width:920px; margin:0 auto; }
-  h1 { font-size:22px; font-weight:650; color:#0B1E33; margin:0 0 6px; letter-spacing:-.015em; }
-  .sub { color:#6B7A8C; margin-bottom:36px; font-size:13px; }
-  .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:1px; background:#E4E9F0;
-            border:1px solid #E4E9F0; border-radius:12px; overflow:hidden; margin-bottom:48px;
-            box-shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px -14px rgba(16,24,40,.14); }
-  .stat { background:#FFFFFF; padding:20px 24px; }
-  .stat .n { font-size:27px; font-weight:650; color:#0B1E33; font-variant-numeric:tabular-nums; }
-  .stat .l { color:#6B7A8C; font-size:11px; text-transform:uppercase; letter-spacing:.06em; margin-top:4px; }
-  h2 { font-size:12.5px; font-weight:650; color:#6B7A8C; text-transform:uppercase; letter-spacing:.07em; margin:40px 0 16px; }
-  .panel { background:#FFFFFF; border-radius:12px; padding:22px 24px;
-            box-shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px -16px rgba(16,24,40,.14); }
+
+  .brand { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+  .logo { width:36px; height:36px; border-radius:10px; flex-shrink:0;
+           background:linear-gradient(135deg,#2B84EB,#5AA9F5);
+           display:flex; align-items:center; justify-content:center;
+           font-weight:800; font-size:18px; color:#FFFFFF;
+           box-shadow:0 6px 20px rgba(43,132,235,.45); }
+  h1 { font-size:23px; font-weight:700; color:#FFFFFF; margin:0; letter-spacing:-.015em; }
+  h1 .accent { color:#5AA9F5; }
+  .badge { margin-left:auto; font-size:10.5px; font-weight:700; letter-spacing:.08em;
+            text-transform:uppercase; color:#5AA9F5; border:1px solid rgba(90,169,245,.45);
+            border-radius:99px; padding:5px 12px; background:rgba(43,132,235,.12); white-space:nowrap; }
+  .sub { color:#9DB8DC; margin-bottom:38px; font-size:13px; }
+
+  .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:14px; margin-bottom:46px; }
+  .stat { background:linear-gradient(180deg,#0D2F5F,#0A2549); border:1px solid rgba(90,169,245,.22);
+           border-radius:14px; padding:20px 22px; box-shadow:0 14px 34px -22px rgba(2,10,26,.95); }
+  .stat .n { font-size:28px; font-weight:700; color:#FFFFFF; font-variant-numeric:tabular-nums; }
+  .stat .l { color:#9DB8DC; font-size:11px; text-transform:uppercase; letter-spacing:.07em; margin-top:4px; }
+
+  h2 { font-size:12.5px; font-weight:700; color:#7FA6D9; text-transform:uppercase; letter-spacing:.08em;
+        margin:42px 0 16px; display:flex; align-items:center; gap:9px; }
+  h2::before { content:""; width:14px; height:3px; border-radius:2px;
+                background:linear-gradient(90deg,#2B84EB,#5AA9F5); }
+
+  .panel { background:linear-gradient(180deg,#0C2C5A,#0A2549); border:1px solid rgba(90,169,245,.18);
+            border-radius:14px; padding:22px 24px; box-shadow:0 14px 34px -22px rgba(2,10,26,.95); }
   .bar-row { display:flex; align-items:center; gap:12px; margin:11px 0; }
   .bar-row:first-child { margin-top:0; }
   .bar-row:last-child { margin-bottom:0; }
-  .bar-label { width:200px; flex-shrink:0; color:#3B4A5A; font-size:13px; }
-  .bar-track { flex:1; background:#EEF2F7; border-radius:4px; height:8px; overflow:hidden; }
-  .bar-fill { height:100%; border-radius:4px; }
-  .bar-value { width:34px; text-align:right; color:#6B7A8C; font-size:12px; font-weight:650; font-variant-numeric:tabular-nums; }
+  .bar-label { width:200px; flex-shrink:0; color:#C9DCF3; font-size:13px; }
+  .bar-track { flex:1; background:rgba(255,255,255,.07); border-radius:4px; height:8px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:4px; box-shadow:0 0 10px rgba(43,132,235,.25); }
+  .bar-value { width:34px; text-align:right; color:#9DB8DC; font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; }
+
   table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
-  th, td { text-align:left; padding:10px 8px; border-bottom:1px solid #EEF2F7; font-size:13px; }
-  th { color:#6B7A8C; font-weight:650; text-transform:uppercase; font-size:10.5px; letter-spacing:.06em; }
+  th, td { text-align:left; padding:10px 8px; border-bottom:1px solid rgba(157,184,220,.12); font-size:13px; }
+  th { color:#9DB8DC; font-weight:700; text-transform:uppercase; font-size:10.5px; letter-spacing:.06em; }
   tbody tr:last-child td { border-bottom:none; }
-  tbody tr:hover td { background:#F9FBFD; }
-  .pill { padding:3px 10px; border-radius:99px; font-weight:650; font-size:11.5px; }
-  input#filter { background:#F6F8FB; border:1px solid #E4E9F0; color:#28384A; padding:9px 13px; border-radius:8px; width:280px; margin-bottom:14px; font-size:13px; }
-  input#filter:focus { outline:none; border-color:#3395FF; background:#FFFFFF; box-shadow:0 0 0 3px rgba(51,149,255,.15); }
-  .note { color:#6B7A8C; font-size:12.5px; margin-top:28px; line-height:1.65; }
+  tbody tr:hover td { background:rgba(43,132,235,.07); }
+  .code-cell { font-family:ui-monospace, "Cascadia Code", Consolas, monospace; color:#9DC1EA; font-size:12.5px; }
+  .pill { padding:3px 10px; border-radius:99px; font-weight:700; font-size:11.5px; }
+
+  input#filter { background:rgba(255,255,255,.06); border:1px solid rgba(90,169,245,.35); color:#F2F7FD;
+                  padding:9px 13px; border-radius:8px; width:280px; margin-bottom:14px; font-size:13px; }
+  input#filter::placeholder { color:#6E8BB3; }
+  input#filter:focus { outline:none; border-color:#2B84EB; background:rgba(255,255,255,.09);
+                        box-shadow:0 0 0 3px rgba(43,132,235,.25); }
+
+  .note { color:#7FA0C8; font-size:12.5px; margin-top:28px; line-height:1.65; }
+  .note code { color:#9DC1EA; }
 </style></head>
 <body>
 <div class="page">
-<h1>Subscription Recovery Agent — Audit Report</h1>
+<div class="brand">
+  <div class="logo">₹</div>
+  <h1>Fail<span class="accent">Safe</span> — Audit Report</h1>
+  <span class="badge">Test mode · offline</span>
+</div>
 <div class="sub">Generated directly from logs/audit_log.jsonl. No AI, no server, no external service involved in this page.</div>
 
 <div class="stats">
@@ -46,10 +82,10 @@
 </div>
 
 <h2>Final action distribution (after the gate)</h2>
-<div class="panel"><div class="bar-row"><span class="bar-label">payment_link_nudge</span><div class="bar-track"><div class="bar-fill" style="width:100.0%;background:#3395FF"></div></div><span class="bar-value">61</span></div><div class="bar-row"><span class="bar-label">no_action_unrecoverable</span><div class="bar-track"><div class="bar-fill" style="width:75.4%;background:#3395FF"></div></div><span class="bar-value">46</span></div><div class="bar-row"><span class="bar-label">delayed_retry</span><div class="bar-track"><div class="bar-fill" style="width:50.8%;background:#3395FF"></div></div><span class="bar-value">31</span></div><div class="bar-row"><span class="bar-label">immediate_retry</span><div class="bar-track"><div class="bar-fill" style="width:19.7%;background:#3395FF"></div></div><span class="bar-value">12</span></div></div>
+<div class="panel"><div class="bar-row"><span class="bar-label">payment_link_nudge</span><div class="bar-track"><div class="bar-fill" style="width:100.0%;background:#F5A623"></div></div><span class="bar-value">61</span></div><div class="bar-row"><span class="bar-label">no_action_unrecoverable</span><div class="bar-track"><div class="bar-fill" style="width:75.4%;background:#7E93B4"></div></div><span class="bar-value">46</span></div><div class="bar-row"><span class="bar-label">delayed_retry</span><div class="bar-track"><div class="bar-fill" style="width:50.8%;background:#2B84EB"></div></div><span class="bar-value">31</span></div><div class="bar-row"><span class="bar-label">immediate_retry</span><div class="bar-track"><div class="bar-fill" style="width:19.7%;background:#00C481"></div></div><span class="bar-value">12</span></div></div>
 
 <h2>Volume by decline code</h2>
-<div class="panel"><div class="bar-row"><span class="bar-label">insufficient_funds</span><div class="bar-track"><div class="bar-fill" style="width:100.0%;background:#6C4FD0"></div></div><span class="bar-value">41</span></div><div class="bar-row"><span class="bar-label">card_expired</span><div class="bar-track"><div class="bar-fill" style="width:63.4%;background:#6C4FD0"></div></div><span class="bar-value">26</span></div><div class="bar-row"><span class="bar-label">authentication_failed</span><div class="bar-track"><div class="bar-fill" style="width:36.6%;background:#6C4FD0"></div></div><span class="bar-value">15</span></div><div class="bar-row"><span class="bar-label">payment_failed</span><div class="bar-track"><div class="bar-fill" style="width:29.3%;background:#6C4FD0"></div></div><span class="bar-value">12</span></div><div class="bar-row"><span class="bar-label">gateway_technical_error</span><div class="bar-track"><div class="bar-fill" style="width:26.8%;background:#6C4FD0"></div></div><span class="bar-value">11</span></div><div class="bar-row"><span class="bar-label">incorrect_cvv</span><div class="bar-track"><div class="bar-fill" style="width:19.5%;background:#6C4FD0"></div></div><span class="bar-value">8</span></div><div class="bar-row"><span class="bar-label">card_not_enrolled</span><div class="bar-track"><div class="bar-fill" style="width:17.1%;background:#6C4FD0"></div></div><span class="bar-value">7</span></div><div class="bar-row"><span class="bar-label">payment_cancelled</span><div class="bar-track"><div class="bar-fill" style="width:17.1%;background:#6C4FD0"></div></div><span class="bar-value">7</span></div><div class="bar-row"><span class="bar-label">payment_timed_out</span><div class="bar-track"><div class="bar-fill" style="width:12.2%;background:#6C4FD0"></div></div><span class="bar-value">5</span></div><div class="bar-row"><span class="bar-label">transaction_limit_exceeded</span><div class="bar-track"><div class="bar-fill" style="width:12.2%;background:#6C4FD0"></div></div><span class="bar-value">5</span></div><div class="bar-row"><span class="bar-label">card_declined</span><div class="bar-track"><div class="bar-fill" style="width:12.2%;background:#6C4FD0"></div></div><span class="bar-value">5</span></div><div class="bar-row"><span class="bar-label">bank_technical_error</span><div class="bar-track"><div class="bar-fill" style="width:9.8%;background:#6C4FD0"></div></div><span class="bar-value">4</span></div><div class="bar-row"><span class="bar-label">debit_instrument_blocked</span><div class="bar-track"><div class="bar-fill" style="width:7.3%;background:#6C4FD0"></div></div><span class="bar-value">3</span></div><div class="bar-row"><span class="bar-label">card_disabled_for_online_payments</span><div class="bar-track"><div class="bar-fill" style="width:2.4%;background:#6C4FD0"></div></div><span class="bar-value">1</span></div></div>
+<div class="panel"><div class="bar-row"><span class="bar-label">insufficient_funds</span><div class="bar-track"><div class="bar-fill" style="width:100.0%;background:#5AA9F5"></div></div><span class="bar-value">41</span></div><div class="bar-row"><span class="bar-label">card_expired</span><div class="bar-track"><div class="bar-fill" style="width:63.4%;background:#5AA9F5"></div></div><span class="bar-value">26</span></div><div class="bar-row"><span class="bar-label">authentication_failed</span><div class="bar-track"><div class="bar-fill" style="width:36.6%;background:#5AA9F5"></div></div><span class="bar-value">15</span></div><div class="bar-row"><span class="bar-label">payment_failed</span><div class="bar-track"><div class="bar-fill" style="width:29.3%;background:#5AA9F5"></div></div><span class="bar-value">12</span></div><div class="bar-row"><span class="bar-label">gateway_technical_error</span><div class="bar-track"><div class="bar-fill" style="width:26.8%;background:#5AA9F5"></div></div><span class="bar-value">11</span></div><div class="bar-row"><span class="bar-label">incorrect_cvv</span><div class="bar-track"><div class="bar-fill" style="width:19.5%;background:#5AA9F5"></div></div><span class="bar-value">8</span></div><div class="bar-row"><span class="bar-label">card_not_enrolled</span><div class="bar-track"><div class="bar-fill" style="width:17.1%;background:#5AA9F5"></div></div><span class="bar-value">7</span></div><div class="bar-row"><span class="bar-label">payment_cancelled</span><div class="bar-track"><div class="bar-fill" style="width:17.1%;background:#5AA9F5"></div></div><span class="bar-value">7</span></div><div class="bar-row"><span class="bar-label">payment_timed_out</span><div class="bar-track"><div class="bar-fill" style="width:12.2%;background:#5AA9F5"></div></div><span class="bar-value">5</span></div><div class="bar-row"><span class="bar-label">transaction_limit_exceeded</span><div class="bar-track"><div class="bar-fill" style="width:12.2%;background:#5AA9F5"></div></div><span class="bar-value">5</span></div><div class="bar-row"><span class="bar-label">card_declined</span><div class="bar-track"><div class="bar-fill" style="width:12.2%;background:#5AA9F5"></div></div><span class="bar-value">5</span></div><div class="bar-row"><span class="bar-label">bank_technical_error</span><div class="bar-track"><div class="bar-fill" style="width:9.8%;background:#5AA9F5"></div></div><span class="bar-value">4</span></div><div class="bar-row"><span class="bar-label">debit_instrument_blocked</span><div class="bar-track"><div class="bar-fill" style="width:7.3%;background:#5AA9F5"></div></div><span class="bar-value">3</span></div><div class="bar-row"><span class="bar-label">card_disabled_for_online_payments</span><div class="bar-track"><div class="bar-fill" style="width:2.4%;background:#5AA9F5"></div></div><span class="bar-value">1</span></div></div>
 
 <h2>LLM proposal accuracy by decline code</h2>
 <div class="panel">
@@ -57,14 +93,14 @@
 <table id="codeTable">
 <thead><tr><th>Decline code</th><th>Total</th><th>Matched</th><th>Mismatched</th><th>Match rate</th></tr></thead>
 <tbody>
-<tr data-code="insufficient_funds"><td>insufficient_funds</td><td>41</td><td>41</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="card_expired"><td>card_expired</td><td>26</td><td>26</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="authentication_failed"><td>authentication_failed</td><td>15</td><td>15</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="payment_failed"><td>payment_failed</td><td>12</td><td>12</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="gateway_technical_error"><td>gateway_technical_error</td><td>11</td><td>11</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="incorrect_cvv"><td>incorrect_cvv</td><td>8</td><td>8</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="card_not_enrolled"><td>card_not_enrolled</td><td>7</td><td>7</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="payment_cancelled"><td>payment_cancelled</td><td>7</td><td>7</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="payment_timed_out"><td>payment_timed_out</td><td>5</td><td>5</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="transaction_limit_exceeded"><td>transaction_limit_exceeded</td><td>5</td><td>5</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="card_declined"><td>card_declined</td><td>5</td><td>5</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="bank_technical_error"><td>bank_technical_error</td><td>4</td><td>4</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr><tr data-code="debit_instrument_blocked"><td>debit_instrument_blocked</td><td>3</td><td>0</td><td>3</td><td><span class="pill" style="background:#D0342C1A;color:#D0342C">0%</span></td></tr><tr data-code="card_disabled_for_online_payments"><td>card_disabled_for_online_payments</td><td>1</td><td>1</td><td>0</td><td><span class="pill" style="background:#12845A1A;color:#12845A">100%</span></td></tr>
+<tr data-code="insufficient_funds"><td class="code-cell">insufficient_funds</td><td>41</td><td>41</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="card_expired"><td class="code-cell">card_expired</td><td>26</td><td>26</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="authentication_failed"><td class="code-cell">authentication_failed</td><td>15</td><td>15</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="payment_failed"><td class="code-cell">payment_failed</td><td>12</td><td>12</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="gateway_technical_error"><td class="code-cell">gateway_technical_error</td><td>11</td><td>11</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="incorrect_cvv"><td class="code-cell">incorrect_cvv</td><td>8</td><td>8</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="card_not_enrolled"><td class="code-cell">card_not_enrolled</td><td>7</td><td>7</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="payment_cancelled"><td class="code-cell">payment_cancelled</td><td>7</td><td>7</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="payment_timed_out"><td class="code-cell">payment_timed_out</td><td>5</td><td>5</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="transaction_limit_exceeded"><td class="code-cell">transaction_limit_exceeded</td><td>5</td><td>5</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="card_declined"><td class="code-cell">card_declined</td><td>5</td><td>5</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="bank_technical_error"><td class="code-cell">bank_technical_error</td><td>4</td><td>4</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr><tr data-code="debit_instrument_blocked"><td class="code-cell">debit_instrument_blocked</td><td>3</td><td>0</td><td>3</td><td><span class="pill" style="background:#ED5E6826;color:#ED5E68">0%</span></td></tr><tr data-code="card_disabled_for_online_payments"><td class="code-cell">card_disabled_for_online_payments</td><td>1</td><td>1</td><td>0</td><td><span class="pill" style="background:#00C48126;color:#00C481">100%</span></td></tr>
 </tbody>
 </table>
 </div>
 
 <div class="note">
   "Matched policy" = the LLM's raw proposal, before the gate touched it, was
-  identical to the one action config/decline_policy.json assigns that code.
+  identical to the one action <code>config/decline_policy.json</code> assigns that code.
   A low match rate is not a hidden problem - it is exactly what the gate
   exists to catch; see METRICS.md for the full breakdown and the two
   systematic biases behind it.
