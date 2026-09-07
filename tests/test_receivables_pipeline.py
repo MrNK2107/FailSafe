@@ -10,20 +10,22 @@ call is ever a side effect of running this suite.
 """
 
 import asyncio
-import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 import pytest
 from mcp import Client
 
-import mcp_server
-from audit_log import AuditLogger
-from receivables_agent import process_one
-from receivables_gate import DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD, MAX_REMINDERS_BEFORE_ESCALATION, ReceivableGate
+import failsafe.mcp_server as mcp_server
+from failsafe.audit_log import AuditLogger
+from failsafe.razorpay_client import force_simulate
+from failsafe.receivables_agent import process_one
+from failsafe.receivables_gate import (
+    DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD,
+    MAX_REMINDERS_BEFORE_ESCALATION,
+    ReceivableGate,
+)
 
 
 def _run(invoice: dict, diagnosis_return=None, inject_failure=None):
@@ -37,10 +39,11 @@ def _run(invoice: dict, diagnosis_return=None, inject_failure=None):
             return await process_one(client, gate, audit, invoice, inject_failure=inject_failure)
 
     try:
-        with patch.object(mcp_server, "SIMULATE", True), \
-             patch.object(mcp_server._rp, "simulate", True):
+        with force_simulate():
             if diagnosis_return is not None:
-                with patch("receivables_agent.diagnose_receivable", return_value=diagnosis_return):
+                with patch(
+                    "failsafe.receivables_agent.diagnose_receivable", return_value=diagnosis_return
+                ):
                     result = asyncio.run(_go())
             else:
                 result = asyncio.run(_go())
@@ -73,7 +76,8 @@ def _base_invoice(**overrides):
 def test_correct_diagnosis_drives_the_gate_and_a_real_tool_call():
     invoice = _base_invoice()
     result, events = _run(
-        invoice, diagnosis_return={"case_reason": "payment_process_friction", "reasoning": "matches"},
+        invoice,
+        diagnosis_return={"case_reason": "payment_process_friction", "reasoning": "matches"},
     )
     assert result["diagnosed_case_reason"] == "payment_process_friction"
     assert result["diagnosis_matched_ground_truth"] is True
@@ -97,7 +101,8 @@ def test_wrong_diagnosis_changes_the_final_action_real_downstream_consequences()
     # ground truth.
     invoice = _base_invoice()
     result, events = _run(
-        invoice, diagnosis_return={"case_reason": "invoice_dispute_likely", "reasoning": "misdiagnosed"},
+        invoice,
+        diagnosis_return={"case_reason": "invoice_dispute_likely", "reasoning": "misdiagnosed"},
     )
     assert result["diagnosed_case_reason"] == "invoice_dispute_likely"
     assert result["diagnosis_matched_ground_truth"] is False
@@ -109,7 +114,9 @@ def test_wrong_diagnosis_changes_the_final_action_real_downstream_consequences()
 
 def test_diagnosis_failure_flags_for_manual_review_without_reaching_gate():
     invoice = _base_invoice()
-    result, events = _run(invoice, diagnosis_return={"case_reason": None, "reasoning": "Model returned no tool call."})
+    result, events = _run(
+        invoice, diagnosis_return={"case_reason": None, "reasoning": "Model returned no tool call."}
+    )
 
     assert result["final_action"] == "no_action_needs_human_review"
     assert result["gate_executed"] is True
@@ -126,7 +133,9 @@ def test_diagnosis_failure_flags_for_manual_review_without_reaching_gate():
 
 def test_diagnosis_returning_unrecognized_case_reason_is_treated_as_failure():
     invoice = _base_invoice()
-    result, events = _run(invoice, diagnosis_return={"case_reason": "aliens_intervened", "reasoning": "hallucinated"})
+    result, events = _run(
+        invoice, diagnosis_return={"case_reason": "aliens_intervened", "reasoning": "hallucinated"}
+    )
 
     assert result["final_action"] == "no_action_needs_human_review"
     assert result["diagnosed_case_reason"] == "aliens_intervened"
@@ -149,7 +158,8 @@ def test_injected_diagnosis_parse_failure_exercises_the_real_failure_path():
 def test_reminder_cap_escalates_even_with_a_correctly_diagnosed_reason():
     invoice = _base_invoice(reminders_sent_count=MAX_REMINDERS_BEFORE_ESCALATION)
     result, events = _run(
-        invoice, diagnosis_return={"case_reason": "payment_process_friction", "reasoning": "matches"},
+        invoice,
+        diagnosis_return={"case_reason": "payment_process_friction", "reasoning": "matches"},
     )
     assert result["diagnosis_matched_ground_truth"] is True  # diagnosis was RIGHT
     assert result["final_action"] == "no_action_already_escalated"  # but the gate still escalates
@@ -161,7 +171,8 @@ def test_reminder_cap_escalates_even_with_a_correctly_diagnosed_reason():
 def test_stale_invoice_escalates_to_legal_review_even_with_a_correctly_diagnosed_reason():
     invoice = _base_invoice(days_overdue=DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD)
     result, events = _run(
-        invoice, diagnosis_return={"case_reason": "payment_process_friction", "reasoning": "matches"},
+        invoice,
+        diagnosis_return={"case_reason": "payment_process_friction", "reasoning": "matches"},
     )
     assert result["diagnosis_matched_ground_truth"] is True
     assert result["final_action"] == "no_action_stale_invoice_needs_legal_review"

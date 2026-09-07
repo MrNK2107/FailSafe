@@ -18,13 +18,8 @@ Real risks this locks in:
   5. Determinism given a seed.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from decline_codes import DECLINE_CODES
-from generate_detection_pool import AT_RISK_CODE_WEIGHTS, generate
+from failsafe.decline_codes import DECLINE_CODES
+from failsafe.generate_detection_pool import AT_RISK_CODE_WEIGHTS, generate
 
 
 def test_pool_contains_both_healthy_and_at_risk_records():
@@ -39,8 +34,12 @@ def test_healthy_records_never_carry_a_decline_code_or_raw_decline_message():
     records = generate(n=60, seed=1)
     for r in records:
         if not r["ground_truth_needs_attention"]:
-            assert r["decline_code"] is None, "a healthy record must not carry a ground-truth decline_code"
-            assert r["raw_decline_message"] is None, "a healthy record must not carry a raw decline message"
+            assert r["decline_code"] is None, (
+                "a healthy record must not carry a ground-truth decline_code"
+            )
+            assert r["raw_decline_message"] is None, (
+                "a healthy record must not carry a raw decline message"
+            )
 
 
 def test_at_risk_records_carry_a_real_decline_code_and_matching_raw_message():
@@ -74,12 +73,15 @@ def test_no_precomputed_is_at_risk_boolean_is_exposed_as_a_signal():
     # signal field names detect.detect_at_risk() takes.
     import inspect
 
-    import detect
+    import failsafe.detect as detect
+
     params = set(inspect.signature(detect.detect_at_risk).parameters)
     assert "ground_truth_needs_attention" not in params
     assert params == {
-        "previous_retry_count", "days_since_last_successful_charge",
-        "most_recent_gateway_response", "subscription_status",
+        "previous_retry_count",
+        "days_since_last_successful_charge",
+        "most_recent_gateway_response",
+        "subscription_status",
     }
 
 
@@ -89,7 +91,8 @@ def test_ambiguous_early_slice_overlaps_between_healthy_blip_and_early_at_risk()
     # classification task, not a lookup on subscription_status alone.
     records = generate(n=150, seed=3)
     pending_one_retry = [
-        r for r in records
+        r
+        for r in records
         if r["subscription_status"] == "pending" and r["previous_retry_count"] == 1
     ]
     truths = {r["ground_truth_needs_attention"] for r in pending_one_retry}
@@ -110,7 +113,9 @@ def test_generation_is_deterministic_given_a_seed():
     # derived from the seeded RNG must not.
     a = generate(n=30, seed=99)
     b = generate(n=30, seed=99)
-    assert [r["ground_truth_needs_attention"] for r in a] == [r["ground_truth_needs_attention"] for r in b]
+    assert [r["ground_truth_needs_attention"] for r in a] == [
+        r["ground_truth_needs_attention"] for r in b
+    ]
     assert [r["decline_code"] for r in a] == [r["decline_code"] for r in b]
     assert [r["previous_retry_count"] for r in a] == [r["previous_retry_count"] for r in b]
     assert [r["subscription_status"] for r in a] == [r["subscription_status"] for r in b]
@@ -118,4 +123,5 @@ def test_generation_is_deterministic_given_a_seed():
 
 if __name__ == "__main__":
     import pytest
+
     raise SystemExit(pytest.main([__file__, "-v"]))

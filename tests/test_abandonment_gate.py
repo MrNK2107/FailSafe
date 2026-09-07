@@ -5,18 +5,13 @@ correctly, since that is the entire point of a deterministic enforcement
 layer.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from abandonment_gate import (
+from failsafe.abandonment_gate import (
     MIN_CART_VALUE_FOR_ACTION_PAISE,
     STALE_ABANDONMENT_MINUTES_THRESHOLD,
     AbandonmentGate,
 )
-from checkout_abandonment_policy import AbandonmentAction
-from gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
+from failsafe.checkout_abandonment_policy import AbandonmentAction
+from failsafe.gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
 
 
 def test_gate_executes_correct_policy_action():
@@ -28,7 +23,9 @@ def test_gate_executes_correct_policy_action():
 
 def test_gate_executes_no_action_policy_for_trust_concern():
     gate = AbandonmentGate()
-    decision = gate.evaluate("cart_2", "trust_or_security_concern", 29900, minutes_since_abandonment=3)
+    decision = gate.evaluate(
+        "cart_2", "trust_or_security_concern", 29900, minutes_since_abandonment=3
+    )
     assert decision.execute  # "executing" a no-action policy just means refusing
     assert decision.final_action == AbandonmentAction.NO_ACTION_RESPECT_HESITATION
 
@@ -39,7 +36,9 @@ def test_no_action_policy_bypasses_value_and_staleness_rules():
     # those rules to fire for it to be handled correctly.
     gate = AbandonmentGate()
     decision = gate.evaluate(
-        "cart_3", "trust_or_security_concern", 100,
+        "cart_3",
+        "trust_or_security_concern",
+        100,
         minutes_since_abandonment=STALE_ABANDONMENT_MINUTES_THRESHOLD + 100,
     )
     assert decision.final_action == AbandonmentAction.NO_ACTION_RESPECT_HESITATION
@@ -48,7 +47,9 @@ def test_no_action_policy_bypasses_value_and_staleness_rules():
 def test_gate_escalates_stale_abandonment_instead_of_nudging():
     gate = AbandonmentGate()
     decision = gate.evaluate(
-        "cart_4", "price_shock", 29900,
+        "cart_4",
+        "price_shock",
+        29900,
         minutes_since_abandonment=STALE_ABANDONMENT_MINUTES_THRESHOLD,
     )
     assert decision.execute
@@ -59,7 +60,9 @@ def test_gate_escalates_stale_abandonment_instead_of_nudging():
 def test_gate_does_not_escalate_fresh_abandonment():
     gate = AbandonmentGate()
     decision = gate.evaluate(
-        "cart_5", "price_shock", 29900,
+        "cart_5",
+        "price_shock",
+        29900,
         minutes_since_abandonment=STALE_ABANDONMENT_MINUTES_THRESHOLD - 1,
     )
     assert decision.final_action == AbandonmentAction.DISCOUNTED_INCENTIVE_NUDGE
@@ -69,7 +72,9 @@ def test_gate_does_not_escalate_fresh_abandonment():
 def test_gate_skips_low_value_cart():
     gate = AbandonmentGate()
     decision = gate.evaluate(
-        "cart_6", "otp_delay_or_failure", MIN_CART_VALUE_FOR_ACTION_PAISE - 1,
+        "cart_6",
+        "otp_delay_or_failure",
+        MIN_CART_VALUE_FOR_ACTION_PAISE - 1,
         minutes_since_abandonment=3,
     )
     assert decision.execute
@@ -79,7 +84,9 @@ def test_gate_skips_low_value_cart():
 def test_gate_does_not_skip_cart_at_or_above_value_floor():
     gate = AbandonmentGate()
     decision = gate.evaluate(
-        "cart_7", "otp_delay_or_failure", MIN_CART_VALUE_FOR_ACTION_PAISE,
+        "cart_7",
+        "otp_delay_or_failure",
+        MIN_CART_VALUE_FOR_ACTION_PAISE,
         minutes_since_abandonment=3,
     )
     assert decision.final_action == AbandonmentAction.IMMEDIATE_PAYMENT_LINK_RESEND
@@ -89,7 +96,10 @@ def test_gate_does_not_skip_cart_at_or_above_value_floor():
 def test_gate_hard_blocks_amount_over_cap():
     gate = AbandonmentGate()
     decision = gate.evaluate(
-        "cart_8", "price_shock", MAX_ACTION_AMOUNT_PAISE + 1, minutes_since_abandonment=3,
+        "cart_8",
+        "price_shock",
+        MAX_ACTION_AMOUNT_PAISE + 1,
+        minutes_since_abandonment=3,
     )
     assert not decision.execute
     assert decision.final_action == AbandonmentAction.NO_ACTION_NEEDS_HUMAN_REVIEW
@@ -131,9 +141,13 @@ def test_gate_reuses_the_real_gate_py_cap_constant_not_a_duplicated_number():
     # docstring promises to avoid: a hardcoded, silently-drifting copy of
     # gate.py's spending cap.
     gate = AbandonmentGate()
-    just_under = gate.evaluate("cart_10", "price_shock", MAX_ACTION_AMOUNT_PAISE, minutes_since_abandonment=3)
+    just_under = gate.evaluate(
+        "cart_10", "price_shock", MAX_ACTION_AMOUNT_PAISE, minutes_since_abandonment=3
+    )
     assert just_under.execute
-    just_over = gate.evaluate("cart_11", "price_shock", MAX_ACTION_AMOUNT_PAISE + 1, minutes_since_abandonment=3)
+    just_over = gate.evaluate(
+        "cart_11", "price_shock", MAX_ACTION_AMOUNT_PAISE + 1, minutes_since_abandonment=3
+    )
     assert not just_over.execute
 
 

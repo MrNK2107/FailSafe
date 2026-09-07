@@ -23,18 +23,15 @@ is ever a side effect of running this suite.
 
 import asyncio
 import json
-import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 import pytest
 
-import integrated_pipeline as ip
-import mcp_server
-from gate import MAX_ACTION_AMOUNT_PAISE
+import failsafe.integrated_pipeline as ip
+import failsafe.mcp_server as mcp_server
+from failsafe.gate import MAX_ACTION_AMOUNT_PAISE
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -103,6 +100,7 @@ def _base_invoice(**overrides):
 # 1. identify_domain()
 # ---------------------------------------------------------------------------
 
+
 def test_identify_domain_classifies_a_real_record_from_each_data_file():
     for name, cfg in ip.DOMAINS.items():
         records = json.loads(cfg["data_path"].read_text(encoding="utf-8"))
@@ -124,6 +122,7 @@ def test_identify_domain_raises_on_ambiguous_record():
 # 2-3. End-to-end mixed batch through the real run()
 # ---------------------------------------------------------------------------
 
+
 def _run_mixed_batch(records_by_domain: dict[str, list[dict]], mocks: dict[str, tuple[str, dict]]):
     """
     Points integrated_pipeline.DOMAINS at tempfile data/audit paths for the
@@ -144,11 +143,11 @@ def _run_mixed_batch(records_by_domain: dict[str, list[dict]], mocks: dict[str, 
         integrated_audit_path = tmp_dir / "audit_integrated.jsonl"
         integrated_results_path = tmp_dir / "INTEGRATED_RESULTS.md"
 
-        with patch.object(ip, "INTEGRATED_AUDIT_PATH", integrated_audit_path), \
-             patch.object(ip, "INTEGRATED_RESULTS_PATH", integrated_results_path):
-            active_patches = [
-                patch(target, return_value=value) for target, value in mocks.values()
-            ]
+        with (
+            patch.object(ip, "INTEGRATED_AUDIT_PATH", integrated_audit_path),
+            patch.object(ip, "INTEGRATED_RESULTS_PATH", integrated_results_path),
+        ):
+            active_patches = [patch(target, return_value=value) for target, value in mocks.values()]
             for p in active_patches:
                 p.start()
             try:
@@ -158,7 +157,11 @@ def _run_mixed_batch(records_by_domain: dict[str, list[dict]], mocks: dict[str, 
                 for p in active_patches:
                     p.stop()
 
-        report_text = integrated_results_path.read_text(encoding="utf-8") if integrated_results_path.exists() else ""
+        report_text = (
+            integrated_results_path.read_text(encoding="utf-8")
+            if integrated_results_path.exists()
+            else ""
+        )
         return results, report_text
     finally:
         for name, cfg in ip.DOMAINS.items():
@@ -169,19 +172,19 @@ def _run_mixed_batch(records_by_domain: dict[str, list[dict]], mocks: dict[str, 
 
 _STANDARD_MOCKS = {
     "subscription_diagnosis": (
-        "recovery_pipeline.diagnose_decline_code",
+        "failsafe.recovery_pipeline.diagnose_decline_code",
         {"decline_code": "insufficient_funds", "reasoning": "test"},
     ),
     "propose_action": (
-        "recovery_pipeline.propose_action",
+        "failsafe.recovery_pipeline.propose_action",
         {"action": "delayed_retry", "reasoning": "test"},
     ),
     "checkout_diagnosis": (
-        "checkout_abandonment_agent.diagnose_abandonment_reason",
+        "failsafe.checkout_abandonment_agent.diagnose_abandonment_reason",
         {"reason": "otp_delay_or_failure", "reasoning": "test"},
     ),
     "receivables_diagnosis": (
-        "receivables_agent.diagnose_receivable",
+        "failsafe.receivables_agent.diagnose_receivable",
         {"case_reason": "cash_flow_delay", "reasoning": "test"},
     ),
 }
@@ -189,10 +192,16 @@ _STANDARD_MOCKS = {
 
 def test_mixed_batch_dispatches_every_record_to_its_own_domain():
     batch = {
-        "subscription": [_base_subscription(subscription_id="sub_a"), _base_subscription(subscription_id="sub_b")],
+        "subscription": [
+            _base_subscription(subscription_id="sub_a"),
+            _base_subscription(subscription_id="sub_b"),
+        ],
         "one_time_payment": [_base_onetime(payment_id="pay_a"), _base_onetime(payment_id="pay_b")],
         "checkout_abandonment": [_base_cart(cart_id="cart_a"), _base_cart(cart_id="cart_b")],
-        "overdue_receivable": [_base_invoice(invoice_id="inv_a"), _base_invoice(invoice_id="inv_b")],
+        "overdue_receivable": [
+            _base_invoice(invoice_id="inv_a"),
+            _base_invoice(invoice_id="inv_b"),
+        ],
     }
     results, _ = _run_mixed_batch(batch, _STANDARD_MOCKS)
 
@@ -239,7 +248,7 @@ def test_unified_report_totals_match_per_record_results():
     )
 
     assert f"**{expected_total_records}**" in report_text
-    assert f"Rs {expected_total_value/100:,.2f}" in report_text
+    assert f"Rs {expected_total_value / 100:,.2f}" in report_text
     assert "100" in report_text  # dispatch correctness line
 
 

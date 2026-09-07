@@ -15,15 +15,10 @@ SIMULATE is on (see test_idempotency_integration.py for the version that
 goes through a real batch-shaped run instead).
 """
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
-from mcp_server import (
+from failsafe.gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
+from failsafe.mcp_server import (
     ToolLevelCapExceeded,
     _enforce_tool_level_cap,
     _reset_tool_level_guard_for_tests,

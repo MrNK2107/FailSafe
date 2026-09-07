@@ -11,20 +11,22 @@ effect of running this suite.
 """
 
 import asyncio
-import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 import pytest
 from mcp import Client
 
-import mcp_server
-from abandonment_gate import AbandonmentGate, MIN_CART_VALUE_FOR_ACTION_PAISE, STALE_ABANDONMENT_MINUTES_THRESHOLD
-from audit_log import AuditLogger
-from checkout_abandonment_agent import process_one
+import failsafe.mcp_server as mcp_server
+from failsafe.abandonment_gate import (
+    MIN_CART_VALUE_FOR_ACTION_PAISE,
+    STALE_ABANDONMENT_MINUTES_THRESHOLD,
+    AbandonmentGate,
+)
+from failsafe.audit_log import AuditLogger
+from failsafe.checkout_abandonment_agent import process_one
+from failsafe.razorpay_client import force_simulate
 
 
 def _run(cart: dict, diagnosis_return=None, inject_failure=None):
@@ -38,10 +40,12 @@ def _run(cart: dict, diagnosis_return=None, inject_failure=None):
             return await process_one(client, gate, audit, cart, inject_failure=inject_failure)
 
     try:
-        with patch.object(mcp_server, "SIMULATE", True), \
-             patch.object(mcp_server._rp, "simulate", True):
+        with force_simulate():
             if diagnosis_return is not None:
-                with patch("checkout_abandonment_agent.diagnose_abandonment_reason", return_value=diagnosis_return):
+                with patch(
+                    "failsafe.checkout_abandonment_agent.diagnose_abandonment_reason",
+                    return_value=diagnosis_return,
+                ):
                     result = asyncio.run(_go())
             else:
                 result = asyncio.run(_go())
@@ -71,7 +75,8 @@ def _base_cart(**overrides):
 def test_correct_diagnosis_drives_the_gate_and_a_real_tool_call():
     cart = _base_cart()
     result, events = _run(
-        cart, diagnosis_return={"reason": "otp_delay_or_failure", "reasoning": "matches"},
+        cart,
+        diagnosis_return={"reason": "otp_delay_or_failure", "reasoning": "matches"},
     )
     assert result["diagnosed_reason"] == "otp_delay_or_failure"
     assert result["diagnosis_matched_ground_truth"] is True
@@ -94,7 +99,8 @@ def test_wrong_diagnosis_changes_the_final_action_real_downstream_consequences()
     # This proves the gate acts on the DIAGNOSED reason, not ground truth.
     cart = _base_cart()
     result, events = _run(
-        cart, diagnosis_return={"reason": "trust_or_security_concern", "reasoning": "misdiagnosed"},
+        cart,
+        diagnosis_return={"reason": "trust_or_security_concern", "reasoning": "misdiagnosed"},
     )
     assert result["diagnosed_reason"] == "trust_or_security_concern"
     assert result["diagnosis_matched_ground_truth"] is False
@@ -106,7 +112,9 @@ def test_wrong_diagnosis_changes_the_final_action_real_downstream_consequences()
 
 def test_diagnosis_failure_flags_for_manual_review_without_reaching_gate():
     cart = _base_cart()
-    result, events = _run(cart, diagnosis_return={"reason": None, "reasoning": "Model returned no tool call."})
+    result, events = _run(
+        cart, diagnosis_return={"reason": None, "reasoning": "Model returned no tool call."}
+    )
 
     assert result["final_action"] == "no_action_needs_human_review"
     assert result["gate_executed"] is True
@@ -123,7 +131,9 @@ def test_diagnosis_failure_flags_for_manual_review_without_reaching_gate():
 
 def test_diagnosis_returning_unrecognized_reason_is_treated_as_failure():
     cart = _base_cart()
-    result, events = _run(cart, diagnosis_return={"reason": "aliens_intervened", "reasoning": "hallucinated"})
+    result, events = _run(
+        cart, diagnosis_return={"reason": "aliens_intervened", "reasoning": "hallucinated"}
+    )
 
     assert result["final_action"] == "no_action_needs_human_review"
     assert result["diagnosed_reason"] == "aliens_intervened"
@@ -146,7 +156,8 @@ def test_injected_diagnosis_parse_failure_exercises_the_real_failure_path():
 def test_low_value_cart_never_gets_a_nudge_even_with_a_correctly_diagnosed_reason():
     cart = _base_cart(amount_paise=MIN_CART_VALUE_FOR_ACTION_PAISE - 1)
     result, events = _run(
-        cart, diagnosis_return={"reason": "otp_delay_or_failure", "reasoning": "matches"},
+        cart,
+        diagnosis_return={"reason": "otp_delay_or_failure", "reasoning": "matches"},
     )
     assert result["diagnosis_matched_ground_truth"] is True  # diagnosis was RIGHT
     assert result["final_action"] == "no_action_low_value"  # but the gate still skips it
@@ -158,7 +169,8 @@ def test_low_value_cart_never_gets_a_nudge_even_with_a_correctly_diagnosed_reaso
 def test_stale_abandonment_never_gets_a_nudge_even_with_a_correctly_diagnosed_reason():
     cart = _base_cart(minutes_since_abandonment=STALE_ABANDONMENT_MINUTES_THRESHOLD)
     result, events = _run(
-        cart, diagnosis_return={"reason": "otp_delay_or_failure", "reasoning": "matches"},
+        cart,
+        diagnosis_return={"reason": "otp_delay_or_failure", "reasoning": "matches"},
     )
     assert result["diagnosis_matched_ground_truth"] is True
     assert result["final_action"] == "no_action_stale_abandonment"

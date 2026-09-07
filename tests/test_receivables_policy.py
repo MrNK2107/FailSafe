@@ -7,13 +7,10 @@ all.
 """
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from receivables_policy import (
+from failsafe.receivables_policy import (
     GATE_ONLY_ACTIONS,
     NO_ACTION_POLICY_ACTIONS,
     POLICY_PATH,
@@ -26,7 +23,7 @@ from receivables_policy import (
 
 
 def test_every_reason_has_a_valid_action():
-    for reason, info in RECEIVABLE_POLICIES.items():
+    for _reason, info in RECEIVABLE_POLICIES.items():
         assert isinstance(info.allowed_action, ReceivableAction)
 
 
@@ -42,13 +39,17 @@ def test_no_action_policies_have_zero_or_low_simulated_recovery_rate():
 
     high_risk = get_receivable_policy("high_risk_non_payment")
     assert high_risk.allowed_action == ReceivableAction.ESCALATE_TO_MANUAL_COLLECTIONS
-    assert 0.0 <= high_risk.simulated_recovery_rate <= 0.2  # low, but escalation can still recover something
+    assert (
+        0.0 <= high_risk.simulated_recovery_rate <= 0.2
+    )  # low, but escalation can still recover something
 
 
 def test_actionable_policies_have_a_plausible_recovery_rate():
     for reason, info in RECEIVABLE_POLICIES.items():
         if info.allowed_action not in NO_ACTION_POLICY_ACTIONS:
-            assert 0.0 < info.simulated_recovery_rate <= 1.0, f"{reason} has an implausible recovery rate"
+            assert 0.0 < info.simulated_recovery_rate <= 1.0, (
+                f"{reason} has an implausible recovery rate"
+            )
 
 
 def test_every_action_has_a_plain_english_glossary_entry():
@@ -79,7 +80,7 @@ def test_no_action_policy_actions_are_a_subset_of_real_policy_rows():
 def test_unknown_reason_raises_keyerror():
     try:
         get_receivable_policy("not_a_real_reason")
-        assert False, "expected KeyError"
+        raise AssertionError("expected KeyError")
     except KeyError:
         pass
 
@@ -96,25 +97,34 @@ def _write_and_load(entry: dict):
 
 def test_config_typo_in_allowed_action_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "allowed_action": "give_them_a_pony",
-            "simulated_recovery_rate": 0.5,
-        })
-        assert False, "expected ValueError for invalid allowed_action"
+        _write_and_load(
+            {
+                "description": "test",
+                "allowed_action": "give_them_a_pony",
+                "simulated_recovery_rate": 0.5,
+            }
+        )
+        raise AssertionError("expected ValueError for invalid allowed_action")
     except ValueError as e:
         assert "allowed_action" in str(e)
 
 
 def test_config_unknown_reason_key_fails_loudly():
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
-        json.dump({"not_a_real_reason": {
-            "description": "test", "allowed_action": "friendly_reminder", "simulated_recovery_rate": 0.5,
-        }}, f)
+        json.dump(
+            {
+                "not_a_real_reason": {
+                    "description": "test",
+                    "allowed_action": "friendly_reminder",
+                    "simulated_recovery_rate": 0.5,
+                }
+            },
+            f,
+        )
         path = Path(f.name)
     try:
         _load_receivables_policy(path)
-        assert False, "expected ValueError for unknown reason key"
+        raise AssertionError("expected ValueError for unknown reason key")
     except ValueError as e:
         assert "ReceivableReason" in str(e)
     finally:
@@ -123,36 +133,42 @@ def test_config_unknown_reason_key_fails_loudly():
 
 def test_config_out_of_range_recovery_rate_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "allowed_action": "payment_plan_offer",
-            "simulated_recovery_rate": 5.0,
-        })
-        assert False, "expected ValueError for out-of-range simulated_recovery_rate"
+        _write_and_load(
+            {
+                "description": "test",
+                "allowed_action": "payment_plan_offer",
+                "simulated_recovery_rate": 5.0,
+            }
+        )
+        raise AssertionError("expected ValueError for out-of-range simulated_recovery_rate")
     except ValueError as e:
         assert "simulated_recovery_rate" in str(e)
 
 
 def test_config_negative_recovery_rate_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "allowed_action": "payment_plan_offer",
-            "simulated_recovery_rate": -0.2,
-        })
-        assert False, "expected ValueError for negative simulated_recovery_rate"
+        _write_and_load(
+            {
+                "description": "test",
+                "allowed_action": "payment_plan_offer",
+                "simulated_recovery_rate": -0.2,
+            }
+        )
+        raise AssertionError("expected ValueError for negative simulated_recovery_rate")
     except ValueError as e:
         assert "simulated_recovery_rate" in str(e)
 
 
 def test_config_non_numeric_recovery_rate_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "allowed_action": "payment_plan_offer",
-            "simulated_recovery_rate": "lots",
-        })
-        assert False, "expected ValueError for non-numeric simulated_recovery_rate"
+        _write_and_load(
+            {
+                "description": "test",
+                "allowed_action": "payment_plan_offer",
+                "simulated_recovery_rate": "lots",
+            }
+        )
+        raise AssertionError("expected ValueError for non-numeric simulated_recovery_rate")
     except ValueError as e:
         assert "simulated_recovery_rate" in str(e)
 

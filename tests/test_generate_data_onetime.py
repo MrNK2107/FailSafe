@@ -6,13 +6,8 @@ decline code and have a plausible amount, since a schema mismatch here
 would silently break agent_onetime.py's gate calls.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from decline_codes import DECLINE_CODES
-from generate_data_onetime import CODE_WEIGHTS, generate
+from failsafe.decline_codes import DECLINE_CODES
+from failsafe.generate_data_onetime import CODE_WEIGHTS, generate
 
 
 def test_every_weighted_code_is_a_real_decline_code():

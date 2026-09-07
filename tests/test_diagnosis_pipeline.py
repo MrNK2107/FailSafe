@@ -34,21 +34,19 @@ are present in `.env` (found the hard way while building this feature).
 """
 
 import asyncio
-import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 import pytest
 from mcp import Client
 
-import mcp_server
-from audit_log import AuditLogger
-from decline_codes import RecoveryAction
-from gate import Gate
-from recovery_pipeline import process_record
+import failsafe.mcp_server as mcp_server
+from failsafe.audit_log import AuditLogger
+from failsafe.decline_codes import RecoveryAction
+from failsafe.gate import Gate
+from failsafe.razorpay_client import force_simulate
+from failsafe.recovery_pipeline import process_record
 
 ACTION_TO_TOOL = {
     RecoveryAction.IMMEDIATE_RETRY: "create_retry_order",
@@ -68,7 +66,10 @@ def _run(record: dict, raw_signal_field: str | None, diagnosis_return=None, inje
     async def _go():
         async with Client(mcp_server.server) as client:
             return await process_record(
-                client, gate, audit, record,
+                client,
+                gate,
+                audit,
+                record,
                 id_field="subscription_id",
                 action_to_tool=ACTION_TO_TOOL,
                 item_label_field="plan",
@@ -79,10 +80,12 @@ def _run(record: dict, raw_signal_field: str | None, diagnosis_return=None, inje
             )
 
     try:
-        with patch.object(mcp_server, "SIMULATE", True), \
-             patch.object(mcp_server._rp, "simulate", True):
+        with force_simulate():
             if diagnosis_return is not None:
-                with patch("recovery_pipeline.diagnose_decline_code", return_value=diagnosis_return):
+                with patch(
+                    "failsafe.recovery_pipeline.diagnose_decline_code",
+                    return_value=diagnosis_return,
+                ):
                     result = asyncio.run(_go())
             else:
                 result = asyncio.run(_go())
@@ -110,8 +113,12 @@ def _base_record(**overrides):
 def test_correct_diagnosis_drives_the_gate_and_is_logged_as_matched():
     record = _base_record()
     result, events = _run(
-        record, raw_signal_field="raw_decline_message",
-        diagnosis_return={"decline_code": "insufficient_funds", "reasoning": "matches insufficient funds"},
+        record,
+        raw_signal_field="raw_decline_message",
+        diagnosis_return={
+            "decline_code": "insufficient_funds",
+            "reasoning": "matches insufficient funds",
+        },
         inject_failure="llm_parse_failure",  # skip the real Ollama action-proposal call
     )
 
@@ -145,8 +152,12 @@ def test_wrong_diagnosis_changes_the_final_action_real_downstream_consequences()
     # insufficient_funds's policy regardless of what diagnosis said.
     record = _base_record()
     result, events = _run(
-        record, raw_signal_field="raw_decline_message",
-        diagnosis_return={"decline_code": "debit_instrument_blocked", "reasoning": "misdiagnosed as blocked"},
+        record,
+        raw_signal_field="raw_decline_message",
+        diagnosis_return={
+            "decline_code": "debit_instrument_blocked",
+            "reasoning": "misdiagnosed as blocked",
+        },
         inject_failure="llm_parse_failure",
     )
 
@@ -171,7 +182,8 @@ def test_wrong_diagnosis_changes_the_final_action_real_downstream_consequences()
 def test_diagnosis_failure_flags_for_manual_review_without_reaching_gate():
     record = _base_record()
     result, events = _run(
-        record, raw_signal_field="raw_decline_message",
+        record,
+        raw_signal_field="raw_decline_message",
         diagnosis_return={"decline_code": None, "reasoning": "Model returned no tool call."},
     )
 
@@ -191,7 +203,8 @@ def test_diagnosis_failure_flags_for_manual_review_without_reaching_gate():
 def test_diagnosis_returning_unrecognized_code_is_treated_as_failure():
     record = _base_record()
     result, events = _run(
-        record, raw_signal_field="raw_decline_message",
+        record,
+        raw_signal_field="raw_decline_message",
         diagnosis_return={"decline_code": "not_a_real_code", "reasoning": "hallucinated"},
     )
 
@@ -206,7 +219,8 @@ def test_diagnosis_returning_unrecognized_code_is_treated_as_failure():
 def test_injected_diagnosis_parse_failure_exercises_the_real_failure_path():
     record = _base_record()
     result, events = _run(
-        record, raw_signal_field="raw_decline_message",
+        record,
+        raw_signal_field="raw_decline_message",
         inject_failure="diagnosis_parse_failure",
     )
     assert result["diagnosed_decline_code"] is None
@@ -239,7 +253,9 @@ def test_raw_signal_field_present_but_record_missing_the_field_falls_through():
     # to ground truth exactly like raw_signal_field=None.
     record = _base_record()
     del record["raw_decline_message"]
-    result, events = _run(record, raw_signal_field="raw_decline_message", inject_failure="llm_parse_failure")
+    result, events = _run(
+        record, raw_signal_field="raw_decline_message", inject_failure="llm_parse_failure"
+    )
 
     assert result["diagnosed_decline_code"] is None
     event_types = [e["event_type"] for e in events]

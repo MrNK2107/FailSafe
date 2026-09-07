@@ -33,22 +33,20 @@ only the first is insufficient, see diagnosis_live_demo.py's docstring).
 """
 
 import asyncio
-import sys
 import tempfile
 from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 import pytest
 from mcp import Client
 
-import mcp_server
-from audit_log import AuditLogger
-from decline_codes import RecoveryAction
-from gate import Gate
-from recovery_pipeline import LEFT_ALONE_BY_DETECTION, process_record
+import failsafe.mcp_server as mcp_server
+from failsafe.audit_log import AuditLogger
+from failsafe.decline_codes import RecoveryAction
+from failsafe.gate import Gate
+from failsafe.razorpay_client import force_simulate
+from failsafe.recovery_pipeline import LEFT_ALONE_BY_DETECTION, process_record
 
 ACTION_TO_TOOL = {
     RecoveryAction.IMMEDIATE_RETRY: "create_retry_order",
@@ -59,7 +57,13 @@ ACTION_TO_TOOL = {
 }
 
 
-def _run(record: dict, detection_return=None, diagnosis_return=None, run_detection=True, inject_failure=None):
+def _run(
+    record: dict,
+    detection_return=None,
+    diagnosis_return=None,
+    run_detection=True,
+    inject_failure=None,
+):
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
         audit_path = Path(f.name)
     audit = AuditLogger(audit_path)
@@ -68,7 +72,10 @@ def _run(record: dict, detection_return=None, diagnosis_return=None, run_detecti
     async def _go():
         async with Client(mcp_server.server) as client:
             return await process_record(
-                client, gate, audit, record,
+                client,
+                gate,
+                audit,
+                record,
                 id_field="subscription_id",
                 action_to_tool=ACTION_TO_TOOL,
                 item_label_field="plan",
@@ -80,17 +87,17 @@ def _run(record: dict, detection_return=None, diagnosis_return=None, run_detecti
             )
 
     detect_patch = (
-        patch("recovery_pipeline.detect_at_risk", return_value=detection_return)
-        if detection_return is not None else nullcontext()
+        patch("failsafe.recovery_pipeline.detect_at_risk", return_value=detection_return)
+        if detection_return is not None
+        else nullcontext()
     )
     diagnose_patch = (
-        patch("recovery_pipeline.diagnose_decline_code", return_value=diagnosis_return)
-        if diagnosis_return is not None else nullcontext()
+        patch("failsafe.recovery_pipeline.diagnose_decline_code", return_value=diagnosis_return)
+        if diagnosis_return is not None
+        else nullcontext()
     )
     try:
-        with patch.object(mcp_server, "SIMULATE", True), \
-             patch.object(mcp_server._rp, "simulate", True), \
-             detect_patch, diagnose_patch:
+        with force_simulate(), detect_patch, diagnose_patch:
             result = asyncio.run(_go())
         events = audit.read_all()
         return result, events
@@ -140,7 +147,8 @@ def _at_risk_record(**overrides):
 def test_correct_leave_alone_stops_a_healthy_record_before_diagnosis_or_gate():
     record = _healthy_record()
     result, events = _run(
-        record, detection_return={"classification": "leave_alone", "reasoning": "clean signals"},
+        record,
+        detection_return={"classification": "leave_alone", "reasoning": "clean signals"},
     )
 
     assert result["final_action"] == LEFT_ALONE_BY_DETECTION
@@ -166,7 +174,10 @@ def test_correct_needs_attention_lets_an_at_risk_record_proceed_normally():
     async def _go():
         async with Client(mcp_server.server) as client:
             return await process_record(
-                client, gate, audit, record,
+                client,
+                gate,
+                audit,
+                record,
                 id_field="subscription_id",
                 action_to_tool=ACTION_TO_TOOL,
                 item_label_field="plan",
@@ -178,12 +189,23 @@ def test_correct_needs_attention_lets_an_at_risk_record_proceed_normally():
             )
 
     try:
-        with patch.object(mcp_server, "SIMULATE", True), \
-             patch.object(mcp_server._rp, "simulate", True), \
-             patch("recovery_pipeline.detect_at_risk",
-                   return_value={"classification": "needs_recovery_attention", "reasoning": "real trouble"}), \
-             patch("recovery_pipeline.diagnose_decline_code",
-                   return_value={"decline_code": "insufficient_funds", "reasoning": "matches insufficient funds"}):
+        with (
+            force_simulate(),
+            patch(
+                "failsafe.recovery_pipeline.detect_at_risk",
+                return_value={
+                    "classification": "needs_recovery_attention",
+                    "reasoning": "real trouble",
+                },
+            ),
+            patch(
+                "failsafe.recovery_pipeline.diagnose_decline_code",
+                return_value={
+                    "decline_code": "insufficient_funds",
+                    "reasoning": "matches insufficient funds",
+                },
+            ),
+        ):
             result = asyncio.run(_go())
         events = audit.read_all()
     finally:
@@ -239,7 +261,10 @@ def test_wrong_needs_attention_on_healthy_record_wastes_a_real_manual_review_cal
     record = _healthy_record()
     result, events = _run(
         record,
-        detection_return={"classification": "needs_recovery_attention", "reasoning": "wrongly judged at-risk"},
+        detection_return={
+            "classification": "needs_recovery_attention",
+            "reasoning": "wrongly judged at-risk",
+        },
     )
 
     assert result["final_action"] != LEFT_ALONE_BY_DETECTION
@@ -268,7 +293,10 @@ def test_non_enum_classification_scores_consistently_with_what_the_pipeline_actu
     record = _healthy_record()
     result, events = _run(
         record,
-        detection_return={"classification": "not_a_real_classification", "reasoning": "garbage model output"},
+        detection_return={
+            "classification": "not_a_real_classification",
+            "reasoning": "garbage model output",
+        },
     )
 
     # Proceeds exactly like needs_recovery_attention would - the real,
@@ -317,7 +345,10 @@ def test_injected_detection_parse_failure_exercises_the_real_failure_path():
     async def _go():
         async with Client(mcp_server.server) as client:
             return await process_record(
-                client, gate, audit, record,
+                client,
+                gate,
+                audit,
+                record,
                 id_field="subscription_id",
                 action_to_tool=ACTION_TO_TOOL,
                 item_label_field="plan",
@@ -329,12 +360,17 @@ def test_injected_detection_parse_failure_exercises_the_real_failure_path():
             )
 
     try:
-        with patch.object(mcp_server, "SIMULATE", True), \
-             patch.object(mcp_server._rp, "simulate", True), \
-             patch("recovery_pipeline.diagnose_decline_code",
-                   return_value={"decline_code": "insufficient_funds", "reasoning": "matches"}), \
-             patch("recovery_pipeline.propose_action",
-                   return_value={"action": "delayed_retry", "reasoning": "matches policy"}):
+        with (
+            force_simulate(),
+            patch(
+                "failsafe.recovery_pipeline.diagnose_decline_code",
+                return_value={"decline_code": "insufficient_funds", "reasoning": "matches"},
+            ),
+            patch(
+                "failsafe.recovery_pipeline.propose_action",
+                return_value={"action": "delayed_retry", "reasoning": "matches policy"},
+            ),
+        ):
             result = asyncio.run(_go())
         events = audit.read_all()
     finally:
@@ -352,7 +388,9 @@ def test_run_detection_false_leaves_existing_behavior_completely_unaffected():
     # test fixture) must behave exactly as before this feature existed.
     record = _at_risk_record()
     result, events = _run(
-        record, run_detection=False, inject_failure="llm_parse_failure",
+        record,
+        run_detection=False,
+        inject_failure="llm_parse_failure",
         diagnosis_return={"decline_code": "insufficient_funds", "reasoning": "matches"},
     )
 

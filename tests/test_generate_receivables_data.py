@@ -8,21 +8,31 @@ leaked into the signals diagnosis actually sees, and prove determinism
 given a seed.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from gate import MAX_ACTION_AMOUNT_PAISE
-from receivables_gate import DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD, MAX_REMINDERS_BEFORE_ESCALATION
-from receivables_policy import RECEIVABLE_POLICIES, ReceivableReason
-from generate_receivables_data import PAYMENT_TERMS, REASON_WEIGHTS, generate
+from failsafe.gate import MAX_ACTION_AMOUNT_PAISE
+from failsafe.generate_receivables_data import PAYMENT_TERMS, REASON_WEIGHTS, generate
+from failsafe.receivables_gate import (
+    DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD,
+    MAX_REMINDERS_BEFORE_ESCALATION,
+)
+from failsafe.receivables_policy import RECEIVABLE_POLICIES, ReceivableReason
 
 SIGNAL_FIELDS = {
-    "invoice_id", "merchant_id", "customer_id", "business_name", "amount_paise", "currency",
-    "invoice_issue_date", "due_date", "payment_terms", "days_overdue",
-    "customer_payment_history_signal", "reminders_sent_count", "last_reminder_response",
-    "typical_order_amount_paise", "amount_vs_typical_ratio", "case_reason",
+    "invoice_id",
+    "merchant_id",
+    "customer_id",
+    "business_name",
+    "amount_paise",
+    "currency",
+    "invoice_issue_date",
+    "due_date",
+    "payment_terms",
+    "days_overdue",
+    "customer_payment_history_signal",
+    "reminders_sent_count",
+    "last_reminder_response",
+    "typical_order_amount_paise",
+    "amount_vs_typical_ratio",
+    "case_reason",
     "simulated_customer_response",
 }
 
@@ -85,7 +95,8 @@ def test_cluster_a_first_time_overdue_no_reminders_early_spans_two_ground_truths
     # is false.
     records = generate(n=300, seed=6)
     cluster = [
-        r for r in records
+        r
+        for r in records
         if r["customer_payment_history_signal"] == "first_time_overdue"
         and r["reminders_sent_count"] == 0
         and 1 <= r["days_overdue"] <= 10
@@ -101,7 +112,8 @@ def test_cluster_b_disputes_history_with_silence_spans_two_ground_truths():
     # must contain BOTH invoice_dispute_likely AND high_risk_non_payment.
     records = generate(n=300, seed=7)
     cluster = [
-        r for r in records
+        r
+        for r in records
         if r["customer_payment_history_signal"] == "disputes_invoices"
         and r["last_reminder_response"] in ("no_response", "requested_extension")
     ]
@@ -122,7 +134,9 @@ def test_some_invoices_exceed_the_gates_spending_cap():
 
 def test_some_invoices_exercise_the_reminder_cap_stopping_rule():
     records = generate(n=200, seed=9)
-    at_or_past_cap = [r for r in records if r["reminders_sent_count"] >= MAX_REMINDERS_BEFORE_ESCALATION]
+    at_or_past_cap = [
+        r for r in records if r["reminders_sent_count"] >= MAX_REMINDERS_BEFORE_ESCALATION
+    ]
     assert len(at_or_past_cap) > 0
 
 
@@ -138,14 +152,16 @@ def test_deterministic_given_same_seed():
     # invoice_id/customer_id use uuid4 (never seeded, exactly like the
     # other two generators' own unseeded id fields) so compare everything
     # else field-by-field.
-    for ra, rb in zip(a, b):
+    for ra, rb in zip(a, b, strict=False):
         for key in SIGNAL_FIELDS - {"invoice_id", "customer_id"}:
             assert ra[key] == rb[key]
 
 
 def test_due_date_is_before_issue_date_plus_terms_and_before_today():
     import datetime
-    from generate_receivables_data import PAYMENT_TERMS_DAYS, TODAY
+
+    from failsafe.generate_receivables_data import PAYMENT_TERMS_DAYS, TODAY
+
     records = generate(n=50, seed=12)
     for r in records:
         issue = datetime.date.fromisoformat(r["invoice_issue_date"])

@@ -17,13 +17,8 @@ Two real risks this locks in:
      what this test guards against regressing.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from decline_codes import DECLINE_CODES
-from generate_data import CODE_WEIGHTS, RAW_SIGNAL_TEMPLATES, generate
+from failsafe.decline_codes import DECLINE_CODES
+from failsafe.generate_data import CODE_WEIGHTS, RAW_SIGNAL_TEMPLATES, generate
 
 
 def test_every_weighted_code_is_a_real_decline_code():
@@ -80,7 +75,9 @@ def test_generation_is_deterministic_given_a_seed():
     assert [r["raw_decline_message"] for r in a] == [r["raw_decline_message"] for r in b]
     assert [r["amount_paise"] for r in a] == [r["amount_paise"] for r in b]
     assert [r["halted_days_ago"] for r in a] == [r["halted_days_ago"] for r in b]
-    assert [r["simulated_customer_response"] for r in a] == [r["simulated_customer_response"] for r in b]
+    assert [r["simulated_customer_response"] for r in a] == [
+        r["simulated_customer_response"] for r in b
+    ]
 
 
 def test_raw_decline_message_draws_from_an_independent_rng_stream():
@@ -117,6 +114,7 @@ def test_raw_decline_message_draws_from_an_independent_rng_stream():
         "debit_instrument_blocked": 1,
     }
     from collections import Counter
+
     records = generate(n=150, seed=42)
     actual_distribution = dict(Counter(r["decline_code"] for r in records))
     assert actual_distribution == expected_distribution

@@ -20,21 +20,17 @@ are commonly present in a local .env.
 """
 
 import asyncio
-import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from mcp import Client
 
-import mcp_server
-from agent import process_one
-from audit_log import AuditLogger
-from gate import Gate
+import failsafe.mcp_server as mcp_server
+from failsafe.agent import process_one
+from failsafe.audit_log import AuditLogger
+from failsafe.gate import Gate
+from failsafe.razorpay_client import force_simulate
 
 
 def _run_two_through_one_shared_gate(sub_a: dict, sub_b: dict):
@@ -45,8 +41,12 @@ def _run_two_through_one_shared_gate(sub_a: dict, sub_b: dict):
 
     async def _run():
         async with Client(mcp_server.server) as client:
-            first = await process_one(client, gate, audit, sub_a, inject_failure="llm_parse_failure")
-            second = await process_one(client, gate, audit, sub_b, inject_failure="llm_parse_failure")
+            first = await process_one(
+                client, gate, audit, sub_a, inject_failure="llm_parse_failure"
+            )
+            second = await process_one(
+                client, gate, audit, sub_b, inject_failure="llm_parse_failure"
+            )
             return first, second
 
     try:
@@ -64,8 +64,7 @@ def _run_two_through_one_shared_gate(sub_a: dict, sub_b: dict):
         # ran locally with real keys configured - patched here too so this
         # file's own docstring promise ("a test run must never place a
         # real API call as a side effect") is actually true.
-        with patch.object(mcp_server, "SIMULATE", True), \
-             patch.object(mcp_server._rp, "simulate", True):
+        with force_simulate():
             first, second = asyncio.run(_run())
         events = audit.read_all()
         return first, second, events

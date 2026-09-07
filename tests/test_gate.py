@@ -5,13 +5,13 @@ Run with: .venv/Scripts/python.exe -m pytest tests/ -v
 (or just: .venv/Scripts/python.exe tests/test_gate.py)
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from decline_codes import RecoveryAction
-from gate import MAX_ACTION_AMOUNT_PAISE, MAX_ATTEMPTS_PER_SUBSCRIPTION, STALE_HALT_ESCALATION_DAYS, Gate
+from failsafe.decline_codes import RecoveryAction
+from failsafe.gate import (
+    MAX_ACTION_AMOUNT_PAISE,
+    MAX_ATTEMPTS_PER_SUBSCRIPTION,
+    STALE_HALT_ESCALATION_DAYS,
+    Gate,
+)
 
 
 def test_gate_executes_correct_policy_action():
@@ -33,7 +33,9 @@ def test_gate_overrides_llm_but_still_executes_corrected_action():
 
 def test_gate_never_allows_retry_on_fraud_even_if_llm_proposes_it():
     gate = Gate()
-    decision = gate.evaluate("sub_3", "payment_risk_check_failed", RecoveryAction.IMMEDIATE_RETRY, 29900)
+    decision = gate.evaluate(
+        "sub_3", "payment_risk_check_failed", RecoveryAction.IMMEDIATE_RETRY, 29900
+    )
     assert not decision.llm_matched_policy
     assert decision.final_action == RecoveryAction.NO_ACTION_FRAUD
     assert decision.execute  # "executing" a no-action policy just means refusing
@@ -41,7 +43,9 @@ def test_gate_never_allows_retry_on_fraud_even_if_llm_proposes_it():
 
 def test_gate_respects_fraud_policy_when_llm_gets_it_right():
     gate = Gate()
-    decision = gate.evaluate("sub_4", "payment_risk_check_failed", RecoveryAction.NO_ACTION_FRAUD, 29900)
+    decision = gate.evaluate(
+        "sub_4", "payment_risk_check_failed", RecoveryAction.NO_ACTION_FRAUD, 29900
+    )
     assert decision.llm_matched_policy
     assert decision.final_action == RecoveryAction.NO_ACTION_FRAUD
 
@@ -82,7 +86,10 @@ def test_gate_escalates_after_cross_run_attempt_cap_reached():
     # relying on same-run idempotency to catch it).
     gate = Gate()
     decision = gate.evaluate(
-        "sub_8", "insufficient_funds", RecoveryAction.DELAYED_RETRY, 29900,
+        "sub_8",
+        "insufficient_funds",
+        RecoveryAction.DELAYED_RETRY,
+        29900,
         prior_attempt_count=MAX_ATTEMPTS_PER_SUBSCRIPTION,
     )
     assert decision.execute
@@ -94,7 +101,10 @@ def test_gate_escalates_after_cross_run_attempt_cap_reached():
 def test_gate_does_not_escalate_below_attempt_cap():
     gate = Gate()
     decision = gate.evaluate(
-        "sub_9", "insufficient_funds", RecoveryAction.DELAYED_RETRY, 29900,
+        "sub_9",
+        "insufficient_funds",
+        RecoveryAction.DELAYED_RETRY,
+        29900,
         prior_attempt_count=MAX_ATTEMPTS_PER_SUBSCRIPTION - 1,
     )
     assert decision.final_action == RecoveryAction.DELAYED_RETRY
@@ -104,7 +114,10 @@ def test_gate_does_not_escalate_below_attempt_cap():
 def test_gate_escalates_stale_halted_subscription_instead_of_nudging():
     gate = Gate()
     decision = gate.evaluate(
-        "sub_10", "card_expired", RecoveryAction.PAYMENT_LINK_NUDGE, 29900,
+        "sub_10",
+        "card_expired",
+        RecoveryAction.PAYMENT_LINK_NUDGE,
+        29900,
         halted_days_ago=STALE_HALT_ESCALATION_DAYS,
     )
     assert decision.execute
@@ -115,7 +128,10 @@ def test_gate_escalates_stale_halted_subscription_instead_of_nudging():
 def test_gate_does_not_escalate_fresh_halted_subscription():
     gate = Gate()
     decision = gate.evaluate(
-        "sub_11", "card_expired", RecoveryAction.PAYMENT_LINK_NUDGE, 29900,
+        "sub_11",
+        "card_expired",
+        RecoveryAction.PAYMENT_LINK_NUDGE,
+        29900,
         halted_days_ago=STALE_HALT_ESCALATION_DAYS - 1,
     )
     assert decision.final_action == RecoveryAction.PAYMENT_LINK_NUDGE
@@ -127,7 +143,10 @@ def test_gate_ignores_missing_halted_days_ago():
     # staleness rule must simply never apply, not error out.
     gate = Gate()
     decision = gate.evaluate(
-        "sub_12", "card_expired", RecoveryAction.PAYMENT_LINK_NUDGE, 29900,
+        "sub_12",
+        "card_expired",
+        RecoveryAction.PAYMENT_LINK_NUDGE,
+        29900,
         halted_days_ago=None,
     )
     assert decision.final_action == RecoveryAction.PAYMENT_LINK_NUDGE
@@ -140,7 +159,10 @@ def test_gate_no_action_policy_bypasses_escalation_rules():
     # correctly, and passing a maxed-out attempt count must not change it.
     gate = Gate()
     decision = gate.evaluate(
-        "sub_13", "payment_risk_check_failed", RecoveryAction.IMMEDIATE_RETRY, 29900,
+        "sub_13",
+        "payment_risk_check_failed",
+        RecoveryAction.IMMEDIATE_RETRY,
+        29900,
         prior_attempt_count=MAX_ATTEMPTS_PER_SUBSCRIPTION,
     )
     assert decision.final_action == RecoveryAction.NO_ACTION_FRAUD

@@ -13,18 +13,15 @@ there's nothing for either of them to evaluate.
 """
 
 import asyncio
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from mcp import Client
 
-from agent import process_one
-from audit_log import AuditLogger
-from gate import Gate
-from mcp_server import server as mcp_server
+from failsafe.agent import process_one
+from failsafe.audit_log import AuditLogger
+from failsafe.gate import Gate
+from failsafe.mcp_server import server as mcp_server
 
 
 def _run_process_one(sub: dict, inject_failure: str | None = None):

@@ -12,15 +12,11 @@ to {"decline_code": None, ...} so the caller (recovery_pipeline.py) can
 flag the record for manual review instead of crashing a batch run.
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import requests
 
-import diagnose
+import failsafe.diagnose as diagnose
 
 
 def _fake_response(json_body: dict):
@@ -31,23 +27,29 @@ def _fake_response(json_body: dict):
 
 
 def test_no_tool_call_returns_none_decline_code():
-    with patch("diagnose.requests.post", return_value=_fake_response({"message": {}})):
-        result = diagnose.diagnose_decline_code("Bank declined this transaction with no further reason provided.")
+    with patch("failsafe.diagnose.requests.post", return_value=_fake_response({"message": {}})):
+        result = diagnose.diagnose_decline_code(
+            "Bank declined this transaction with no further reason provided."
+        )
     assert result["decline_code"] is None
     assert "no tool call" in result["reasoning"].lower()
 
 
 def test_malformed_tool_call_arguments_returns_none_decline_code():
     body = {"message": {"tool_calls": [{"function": {"arguments": "{not valid json"}}]}}
-    with patch("diagnose.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.diagnose.requests.post", return_value=_fake_response(body)):
         result = diagnose.diagnose_decline_code("Issuer response: do not honor.")
     assert result["decline_code"] is None
     assert "malformed" in result["reasoning"].lower()
 
 
 def test_missing_decline_code_field_returns_none():
-    body = {"message": {"tool_calls": [{"function": {"arguments": {"reasoning": "no decline_code key at all"}}}]}}
-    with patch("diagnose.requests.post", return_value=_fake_response(body)):
+    body = {
+        "message": {
+            "tool_calls": [{"function": {"arguments": {"reasoning": "no decline_code key at all"}}}]
+        }
+    }
+    with patch("failsafe.diagnose.requests.post", return_value=_fake_response(body)):
         result = diagnose.diagnose_decline_code("Bank response: insufficient balance in account.")
     assert result["decline_code"] is None
     assert "decline_code" in result["reasoning"].lower()
@@ -59,14 +61,18 @@ def test_correct_classification_of_an_unambiguous_raw_message():
     body = {
         "message": {
             "tool_calls": [
-                {"function": {"arguments": {
-                    "decline_code": "card_expired",
-                    "reasoning": "The message explicitly says the card's valid-thru date has passed.",
-                }}}
+                {
+                    "function": {
+                        "arguments": {
+                            "decline_code": "card_expired",
+                            "reasoning": "The message explicitly says the card's valid-thru date has passed.",
+                        }
+                    }
+                }
             ]
         }
     }
-    with patch("diagnose.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.diagnose.requests.post", return_value=_fake_response(body)):
         result = diagnose.diagnose_decline_code("Issuer declined - card expiry date has lapsed.")
     assert result["decline_code"] == "card_expired"
     assert "valid-thru" in result["reasoning"] or "expiry" in result["reasoning"]
@@ -83,14 +89,18 @@ def test_ambiguous_raw_message_can_be_misdiagnosed_and_is_passed_through_unvalid
     body = {
         "message": {
             "tool_calls": [
-                {"function": {"arguments": {
-                    "decline_code": "payment_risk_check_failed",
-                    "reasoning": "A generic 'do not honor' with no detail often indicates an undisclosed risk hold.",
-                }}}
+                {
+                    "function": {
+                        "arguments": {
+                            "decline_code": "payment_risk_check_failed",
+                            "reasoning": "A generic 'do not honor' with no detail often indicates an undisclosed risk hold.",
+                        }
+                    }
+                }
             ]
         }
     }
-    with patch("diagnose.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.diagnose.requests.post", return_value=_fake_response(body)):
         result = diagnose.diagnose_decline_code("Issuer response: do not honor.")
     # This happens to be "wrong" if the record's true ground truth was
     # card_declined - diagnose.py itself has no opinion on that; it only
@@ -107,14 +117,18 @@ def test_model_can_return_a_code_outside_the_known_enum():
     body = {
         "message": {
             "tool_calls": [
-                {"function": {"arguments": {
-                    "decline_code": "definitely_not_a_real_decline_code",
-                    "reasoning": "hallucinated",
-                }}}
+                {
+                    "function": {
+                        "arguments": {
+                            "decline_code": "definitely_not_a_real_decline_code",
+                            "reasoning": "hallucinated",
+                        }
+                    }
+                }
             ]
         }
     }
-    with patch("diagnose.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.diagnose.requests.post", return_value=_fake_response(body)):
         result = diagnose.diagnose_decline_code("some raw message")
     assert result["decline_code"] == "definitely_not_a_real_decline_code"
 
@@ -122,23 +136,35 @@ def test_model_can_return_a_code_outside_the_known_enum():
 def test_transient_failure_then_success_retries_and_recovers():
     body = {
         "message": {
-            "tool_calls": [{"function": {"arguments": {"decline_code": "insufficient_funds", "reasoning": "ok"}}}]
+            "tool_calls": [
+                {
+                    "function": {
+                        "arguments": {"decline_code": "insufficient_funds", "reasoning": "ok"}
+                    }
+                }
+            ]
         }
     }
-    with patch(
-        "diagnose.requests.post",
-        side_effect=[requests.exceptions.ConnectionError("transient"), _fake_response(body)],
-    ) as mock_post, patch("diagnose.time.sleep"):
+    with (
+        patch(
+            "failsafe.diagnose.requests.post",
+            side_effect=[requests.exceptions.ConnectionError("transient"), _fake_response(body)],
+        ) as mock_post,
+        patch("failsafe.diagnose.time.sleep"),
+    ):
         result = diagnose.diagnose_decline_code("Bank response: insufficient balance in account.")
     assert result["decline_code"] == "insufficient_funds"
     assert mock_post.call_count == 2
 
 
 def test_all_retries_exhausted_falls_back_without_raising():
-    with patch(
-        "diagnose.requests.post",
-        side_effect=requests.exceptions.ConnectionError("ollama is down"),
-    ) as mock_post, patch("diagnose.time.sleep"):
+    with (
+        patch(
+            "failsafe.diagnose.requests.post",
+            side_effect=requests.exceptions.ConnectionError("ollama is down"),
+        ) as mock_post,
+        patch("failsafe.diagnose.time.sleep"),
+    ):
         result = diagnose.diagnose_decline_code("Issuing bank's system was unreachable/down.")
     assert result["decline_code"] is None
     assert mock_post.call_count == diagnose.MAX_RETRIES

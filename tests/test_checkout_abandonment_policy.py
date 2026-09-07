@@ -6,13 +6,10 @@ total confidence, which is worse than no gate at all.
 """
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from checkout_abandonment_policy import (
+from failsafe.checkout_abandonment_policy import (
     ABANDONMENT_POLICIES,
     GATE_ONLY_ACTIONS,
     POLICY_PATH,
@@ -24,7 +21,7 @@ from checkout_abandonment_policy import (
 
 
 def test_every_reason_has_a_valid_action():
-    for reason, info in ABANDONMENT_POLICIES.items():
+    for _reason, info in ABANDONMENT_POLICIES.items():
         assert isinstance(info.allowed_action, AbandonmentAction)
 
 
@@ -42,7 +39,9 @@ def test_no_action_policy_has_zero_simulated_recovery_rate():
 def test_actionable_policies_have_a_plausible_recovery_rate():
     for reason, info in ABANDONMENT_POLICIES.items():
         if info.allowed_action != AbandonmentAction.NO_ACTION_RESPECT_HESITATION:
-            assert 0.0 < info.simulated_recovery_rate <= 1.0, f"{reason} has an implausible recovery rate"
+            assert 0.0 < info.simulated_recovery_rate <= 1.0, (
+                f"{reason} has an implausible recovery rate"
+            )
 
 
 def test_every_action_has_a_plain_english_glossary_entry():
@@ -67,7 +66,7 @@ def test_gate_only_actions_never_appear_as_a_policy_rows_allowed_action():
 def test_unknown_reason_raises_keyerror():
     try:
         get_abandonment_policy("not_a_real_reason")
-        assert False, "expected KeyError"
+        raise AssertionError("expected KeyError")
     except KeyError:
         pass
 
@@ -84,25 +83,34 @@ def _write_and_load(entry: dict):
 
 def test_config_typo_in_allowed_action_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "allowed_action": "give_them_a_pony",
-            "simulated_recovery_rate": 0.5,
-        })
-        assert False, "expected ValueError for invalid allowed_action"
+        _write_and_load(
+            {
+                "description": "test",
+                "allowed_action": "give_them_a_pony",
+                "simulated_recovery_rate": 0.5,
+            }
+        )
+        raise AssertionError("expected ValueError for invalid allowed_action")
     except ValueError as e:
         assert "allowed_action" in str(e)
 
 
 def test_config_unknown_reason_key_fails_loudly():
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
-        json.dump({"not_a_real_reason": {
-            "description": "test", "allowed_action": "delayed_nudge_no_discount", "simulated_recovery_rate": 0.5,
-        }}, f)
+        json.dump(
+            {
+                "not_a_real_reason": {
+                    "description": "test",
+                    "allowed_action": "delayed_nudge_no_discount",
+                    "simulated_recovery_rate": 0.5,
+                }
+            },
+            f,
+        )
         path = Path(f.name)
     try:
         _load_abandonment_policy(path)
-        assert False, "expected ValueError for unknown reason key"
+        raise AssertionError("expected ValueError for unknown reason key")
     except ValueError as e:
         assert "AbandonmentReason" in str(e)
     finally:
@@ -111,36 +119,42 @@ def test_config_unknown_reason_key_fails_loudly():
 
 def test_config_out_of_range_recovery_rate_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "allowed_action": "discounted_incentive_nudge",
-            "simulated_recovery_rate": 5.0,
-        })
-        assert False, "expected ValueError for out-of-range simulated_recovery_rate"
+        _write_and_load(
+            {
+                "description": "test",
+                "allowed_action": "discounted_incentive_nudge",
+                "simulated_recovery_rate": 5.0,
+            }
+        )
+        raise AssertionError("expected ValueError for out-of-range simulated_recovery_rate")
     except ValueError as e:
         assert "simulated_recovery_rate" in str(e)
 
 
 def test_config_negative_recovery_rate_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "allowed_action": "discounted_incentive_nudge",
-            "simulated_recovery_rate": -0.2,
-        })
-        assert False, "expected ValueError for negative simulated_recovery_rate"
+        _write_and_load(
+            {
+                "description": "test",
+                "allowed_action": "discounted_incentive_nudge",
+                "simulated_recovery_rate": -0.2,
+            }
+        )
+        raise AssertionError("expected ValueError for negative simulated_recovery_rate")
     except ValueError as e:
         assert "simulated_recovery_rate" in str(e)
 
 
 def test_config_non_numeric_recovery_rate_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "allowed_action": "discounted_incentive_nudge",
-            "simulated_recovery_rate": "lots",
-        })
-        assert False, "expected ValueError for non-numeric simulated_recovery_rate"
+        _write_and_load(
+            {
+                "description": "test",
+                "allowed_action": "discounted_incentive_nudge",
+                "simulated_recovery_rate": "lots",
+            }
+        )
+        raise AssertionError("expected ValueError for non-numeric simulated_recovery_rate")
     except ValueError as e:
         assert "simulated_recovery_rate" in str(e)
 

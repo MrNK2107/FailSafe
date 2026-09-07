@@ -5,12 +5,7 @@ log's history. No live Ollama server needed: this only exercises history
 counting over a list of plain dicts shaped like real audit log events.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from agent import _count_prior_attempts
+from failsafe.agent import _count_prior_attempts
 
 
 def test_counts_only_matching_subscription_and_attempt_tools():
@@ -29,7 +24,11 @@ def test_manual_review_escalation_does_not_count_as_an_attempt():
     # Escalating to a human is not itself a retry attempt - counting it
     # would make the attempt cap trigger on its own past escalations.
     events = [
-        {"event_type": "mcp_tool_call", "subscription_id": "sub_a", "tool": "flag_for_manual_review"},
+        {
+            "event_type": "mcp_tool_call",
+            "subscription_id": "sub_a",
+            "tool": "flag_for_manual_review",
+        },
     ]
     assert _count_prior_attempts(events, "sub_a") == 0
 

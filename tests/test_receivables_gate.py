@@ -7,37 +7,38 @@ this domain's own "compliant escalation + stopping rules" bar
 (MAX_REMINDERS_BEFORE_ESCALATION, DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD).
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
-from receivables_gate import (
+from failsafe.gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
+from failsafe.receivables_gate import (
     DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD,
     MAX_REMINDERS_BEFORE_ESCALATION,
     ReceivableGate,
 )
-from receivables_policy import ReceivableAction
+from failsafe.receivables_policy import ReceivableAction
 
 
 def test_gate_executes_correct_policy_action():
     gate = ReceivableGate()
-    decision = gate.evaluate("inv_1", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0)
+    decision = gate.evaluate(
+        "inv_1", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0
+    )
     assert decision.execute
     assert decision.final_action == ReceivableAction.FRIENDLY_REMINDER
 
 
 def test_gate_executes_no_action_policy_for_dispute():
     gate = ReceivableGate()
-    decision = gate.evaluate("inv_2", "invoice_dispute_likely", 45000, days_overdue=20, reminders_sent_count=2)
+    decision = gate.evaluate(
+        "inv_2", "invoice_dispute_likely", 45000, days_overdue=20, reminders_sent_count=2
+    )
     assert decision.execute  # "executing" a no-action policy just means refusing
     assert decision.final_action == ReceivableAction.NO_ACTION_NEEDS_DISPUTE_REVIEW
 
 
 def test_gate_executes_no_action_policy_for_high_risk_escalation():
     gate = ReceivableGate()
-    decision = gate.evaluate("inv_3", "high_risk_non_payment", 45000, days_overdue=40, reminders_sent_count=2)
+    decision = gate.evaluate(
+        "inv_3", "high_risk_non_payment", 45000, days_overdue=40, reminders_sent_count=2
+    )
     assert decision.execute
     assert decision.final_action == ReceivableAction.ESCALATE_TO_MANUAL_COLLECTIONS
 
@@ -49,7 +50,9 @@ def test_no_action_policy_bypasses_reminder_cap_and_staleness_rules():
     # be handled correctly.
     gate = ReceivableGate()
     decision = gate.evaluate(
-        "inv_4", "invoice_dispute_likely", 100,
+        "inv_4",
+        "invoice_dispute_likely",
+        100,
         days_overdue=DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD + 50,
         reminders_sent_count=MAX_REMINDERS_BEFORE_ESCALATION + 5,
     )
@@ -59,7 +62,10 @@ def test_no_action_policy_bypasses_reminder_cap_and_staleness_rules():
 def test_gate_escalates_at_reminder_cap_instead_of_sending_another_reminder():
     gate = ReceivableGate()
     decision = gate.evaluate(
-        "inv_5", "cash_flow_delay", 45000, days_overdue=20,
+        "inv_5",
+        "cash_flow_delay",
+        45000,
+        days_overdue=20,
         reminders_sent_count=MAX_REMINDERS_BEFORE_ESCALATION,
     )
     assert decision.execute
@@ -70,7 +76,10 @@ def test_gate_escalates_at_reminder_cap_instead_of_sending_another_reminder():
 def test_gate_does_not_escalate_just_under_the_reminder_cap():
     gate = ReceivableGate()
     decision = gate.evaluate(
-        "inv_6", "cash_flow_delay", 45000, days_overdue=20,
+        "inv_6",
+        "cash_flow_delay",
+        45000,
+        days_overdue=20,
         reminders_sent_count=MAX_REMINDERS_BEFORE_ESCALATION - 1,
     )
     assert decision.execute
@@ -80,8 +89,11 @@ def test_gate_does_not_escalate_just_under_the_reminder_cap():
 def test_gate_escalates_stale_invoice_to_legal_review():
     gate = ReceivableGate()
     decision = gate.evaluate(
-        "inv_7", "chronic_late_payer_will_eventually_pay", 45000,
-        days_overdue=DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD, reminders_sent_count=1,
+        "inv_7",
+        "chronic_late_payer_will_eventually_pay",
+        45000,
+        days_overdue=DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD,
+        reminders_sent_count=1,
     )
     assert decision.execute
     assert decision.final_action == ReceivableAction.NO_ACTION_STALE_INVOICE_NEEDS_LEGAL_REVIEW
@@ -90,8 +102,11 @@ def test_gate_escalates_stale_invoice_to_legal_review():
 def test_gate_does_not_escalate_invoice_just_under_the_staleness_threshold():
     gate = ReceivableGate()
     decision = gate.evaluate(
-        "inv_8", "chronic_late_payer_will_eventually_pay", 45000,
-        days_overdue=DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD - 1, reminders_sent_count=1,
+        "inv_8",
+        "chronic_late_payer_will_eventually_pay",
+        45000,
+        days_overdue=DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD - 1,
+        reminders_sent_count=1,
     )
     assert decision.execute
     assert decision.final_action == ReceivableAction.FIRM_REMINDER_WITH_DEADLINE
@@ -100,7 +115,11 @@ def test_gate_does_not_escalate_invoice_just_under_the_staleness_threshold():
 def test_gate_hard_blocks_amount_over_cap():
     gate = ReceivableGate()
     decision = gate.evaluate(
-        "inv_9", "cash_flow_delay", MAX_ACTION_AMOUNT_PAISE + 1, days_overdue=3, reminders_sent_count=0,
+        "inv_9",
+        "cash_flow_delay",
+        MAX_ACTION_AMOUNT_PAISE + 1,
+        days_overdue=3,
+        reminders_sent_count=0,
     )
     assert not decision.execute
     assert decision.final_action == ReceivableAction.NO_ACTION_NEEDS_HUMAN_REVIEW
@@ -108,8 +127,12 @@ def test_gate_hard_blocks_amount_over_cap():
 
 def test_gate_hard_blocks_duplicate_action_same_run():
     gate = ReceivableGate()
-    first = gate.evaluate("inv_10", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0)
-    second = gate.evaluate("inv_10", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0)
+    first = gate.evaluate(
+        "inv_10", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0
+    )
+    second = gate.evaluate(
+        "inv_10", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0
+    )
     assert first.execute
     assert not second.execute
     assert second.final_action == ReceivableAction.NO_ACTION_NEEDS_HUMAN_REVIEW
@@ -123,7 +146,9 @@ def test_gate_hard_blocks_when_run_total_cap_would_be_exceeded():
     # it across many in-cap actions, without needing 10+ real evaluate() calls.
     gate = ReceivableGate()
     gate._run_total_paise = MAX_RUN_TOTAL_PAISE - 100
-    decision = gate.evaluate("inv_13", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0)
+    decision = gate.evaluate(
+        "inv_13", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0
+    )
     assert not decision.execute
     assert decision.final_action == ReceivableAction.NO_ACTION_NEEDS_HUMAN_REVIEW
     assert "run-total" in decision.reason.lower()
@@ -132,7 +157,9 @@ def test_gate_hard_blocks_when_run_total_cap_would_be_exceeded():
 def test_gate_does_not_block_when_run_total_cap_would_not_be_exceeded():
     gate = ReceivableGate()
     gate._run_total_paise = MAX_RUN_TOTAL_PAISE - 100000
-    decision = gate.evaluate("inv_14", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0)
+    decision = gate.evaluate(
+        "inv_14", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0
+    )
     assert decision.execute
 
 
@@ -141,9 +168,17 @@ def test_gate_reuses_the_real_gate_py_cap_constant_not_a_duplicated_number():
     # docstring promises to avoid: a hardcoded, silently-drifting copy of
     # gate.py's spending cap.
     gate = ReceivableGate()
-    just_under = gate.evaluate("inv_11", "cash_flow_delay", MAX_ACTION_AMOUNT_PAISE, days_overdue=3, reminders_sent_count=0)
+    just_under = gate.evaluate(
+        "inv_11", "cash_flow_delay", MAX_ACTION_AMOUNT_PAISE, days_overdue=3, reminders_sent_count=0
+    )
     assert just_under.execute
-    just_over = gate.evaluate("inv_12", "cash_flow_delay", MAX_ACTION_AMOUNT_PAISE + 1, days_overdue=3, reminders_sent_count=0)
+    just_over = gate.evaluate(
+        "inv_12",
+        "cash_flow_delay",
+        MAX_ACTION_AMOUNT_PAISE + 1,
+        days_overdue=3,
+        reminders_sent_count=0,
+    )
     assert not just_over.execute
 
 

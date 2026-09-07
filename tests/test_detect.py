@@ -13,15 +13,11 @@ tool call must fall back to {"classification": None, ...} so the caller
 batch run.
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import requests
 
-import detect
+import failsafe.detect as detect
 
 
 def _fake_response(json_body: dict):
@@ -32,7 +28,7 @@ def _fake_response(json_body: dict):
 
 
 def test_no_tool_call_returns_none_classification():
-    with patch("detect.requests.post", return_value=_fake_response({"message": {}})):
+    with patch("failsafe.detect.requests.post", return_value=_fake_response({"message": {}})):
         result = detect.detect_at_risk(
             previous_retry_count=0,
             days_since_last_successful_charge=1,
@@ -45,7 +41,7 @@ def test_no_tool_call_returns_none_classification():
 
 def test_malformed_tool_call_arguments_returns_none_classification():
     body = {"message": {"tool_calls": [{"function": {"arguments": "{not valid json"}}]}}
-    with patch("detect.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.detect.requests.post", return_value=_fake_response(body)):
         result = detect.detect_at_risk(
             previous_retry_count=2,
             days_since_last_successful_charge=10,
@@ -57,8 +53,14 @@ def test_malformed_tool_call_arguments_returns_none_classification():
 
 
 def test_missing_classification_field_returns_none():
-    body = {"message": {"tool_calls": [{"function": {"arguments": {"reasoning": "no classification key at all"}}}]}}
-    with patch("detect.requests.post", return_value=_fake_response(body)):
+    body = {
+        "message": {
+            "tool_calls": [
+                {"function": {"arguments": {"reasoning": "no classification key at all"}}}
+            ]
+        }
+    }
+    with patch("failsafe.detect.requests.post", return_value=_fake_response(body)):
         result = detect.detect_at_risk(
             previous_retry_count=0,
             days_since_last_successful_charge=1,
@@ -73,14 +75,18 @@ def test_correct_classification_of_a_clearly_healthy_record():
     body = {
         "message": {
             "tool_calls": [
-                {"function": {"arguments": {
-                    "classification": "leave_alone",
-                    "reasoning": "No retries, last charge succeeded 1 day ago, status is active.",
-                }}}
+                {
+                    "function": {
+                        "arguments": {
+                            "classification": "leave_alone",
+                            "reasoning": "No retries, last charge succeeded 1 day ago, status is active.",
+                        }
+                    }
+                }
             ]
         }
     }
-    with patch("detect.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.detect.requests.post", return_value=_fake_response(body)):
         result = detect.detect_at_risk(
             previous_retry_count=0,
             days_since_last_successful_charge=1,
@@ -94,14 +100,18 @@ def test_correct_classification_of_a_clearly_at_risk_record():
     body = {
         "message": {
             "tool_calls": [
-                {"function": {"arguments": {
-                    "classification": "needs_recovery_attention",
-                    "reasoning": "Three prior retries and 20 days since the last successful charge.",
-                }}}
+                {
+                    "function": {
+                        "arguments": {
+                            "classification": "needs_recovery_attention",
+                            "reasoning": "Three prior retries and 20 days since the last successful charge.",
+                        }
+                    }
+                }
             ]
         }
     }
-    with patch("detect.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.detect.requests.post", return_value=_fake_response(body)):
         result = detect.detect_at_risk(
             previous_retry_count=3,
             days_since_last_successful_charge=20,
@@ -120,14 +130,18 @@ def test_model_can_return_a_classification_outside_the_known_enum():
     body = {
         "message": {
             "tool_calls": [
-                {"function": {"arguments": {
-                    "classification": "not_a_real_classification",
-                    "reasoning": "hallucinated",
-                }}}
+                {
+                    "function": {
+                        "arguments": {
+                            "classification": "not_a_real_classification",
+                            "reasoning": "hallucinated",
+                        }
+                    }
+                }
             ]
         }
     }
-    with patch("detect.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.detect.requests.post", return_value=_fake_response(body)):
         result = detect.detect_at_risk(
             previous_retry_count=1,
             days_since_last_successful_charge=2,
@@ -140,15 +154,25 @@ def test_model_can_return_a_classification_outside_the_known_enum():
 def test_transient_failure_then_success_retries_and_recovers():
     body = {
         "message": {
-            "tool_calls": [{"function": {"arguments": {
-                "classification": "needs_recovery_attention", "reasoning": "ok",
-            }}}]
+            "tool_calls": [
+                {
+                    "function": {
+                        "arguments": {
+                            "classification": "needs_recovery_attention",
+                            "reasoning": "ok",
+                        }
+                    }
+                }
+            ]
         }
     }
-    with patch(
-        "detect.requests.post",
-        side_effect=[requests.exceptions.ConnectionError("transient"), _fake_response(body)],
-    ) as mock_post, patch("detect.time.sleep"):
+    with (
+        patch(
+            "failsafe.detect.requests.post",
+            side_effect=[requests.exceptions.ConnectionError("transient"), _fake_response(body)],
+        ) as mock_post,
+        patch("failsafe.detect.time.sleep"),
+    ):
         result = detect.detect_at_risk(
             previous_retry_count=2,
             days_since_last_successful_charge=15,
@@ -160,10 +184,13 @@ def test_transient_failure_then_success_retries_and_recovers():
 
 
 def test_all_retries_exhausted_falls_back_without_raising():
-    with patch(
-        "detect.requests.post",
-        side_effect=requests.exceptions.ConnectionError("ollama is down"),
-    ) as mock_post, patch("detect.time.sleep"):
+    with (
+        patch(
+            "failsafe.detect.requests.post",
+            side_effect=requests.exceptions.ConnectionError("ollama is down"),
+        ) as mock_post,
+        patch("failsafe.detect.time.sleep"),
+    ):
         result = detect.detect_at_risk(
             previous_retry_count=0,
             days_since_last_successful_charge=0,
@@ -176,4 +203,5 @@ def test_all_retries_exhausted_falls_back_without_raising():
 
 if __name__ == "__main__":
     import pytest
+
     raise SystemExit(pytest.main([__file__, "-v"]))

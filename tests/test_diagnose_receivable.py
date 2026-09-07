@@ -11,15 +11,11 @@ tool call must fall back to {"case_reason": None, ...} so the caller
 crashing a batch run.
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import requests
 
-import diagnose_receivable as diag
+import failsafe.diagnose_receivable as diag
 
 
 def _fake_response(json_body: dict):
@@ -43,7 +39,9 @@ def _call(**overrides):
 
 
 def test_no_tool_call_returns_none_case_reason():
-    with patch("diagnose_receivable.requests.post", return_value=_fake_response({"message": {}})):
+    with patch(
+        "failsafe.diagnose_receivable.requests.post", return_value=_fake_response({"message": {}})
+    ):
         result = _call()
     assert result["case_reason"] is None
     assert "no tool call" in result["reasoning"].lower()
@@ -51,15 +49,19 @@ def test_no_tool_call_returns_none_case_reason():
 
 def test_malformed_tool_call_arguments_returns_none_case_reason():
     body = {"message": {"tool_calls": [{"function": {"arguments": "{not valid json"}}]}}
-    with patch("diagnose_receivable.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.diagnose_receivable.requests.post", return_value=_fake_response(body)):
         result = _call()
     assert result["case_reason"] is None
     assert "malformed" in result["reasoning"].lower()
 
 
 def test_missing_case_reason_field_returns_none():
-    body = {"message": {"tool_calls": [{"function": {"arguments": {"reasoning": "no case_reason key at all"}}}]}}
-    with patch("diagnose_receivable.requests.post", return_value=_fake_response(body)):
+    body = {
+        "message": {
+            "tool_calls": [{"function": {"arguments": {"reasoning": "no case_reason key at all"}}}]
+        }
+    }
+    with patch("failsafe.diagnose_receivable.requests.post", return_value=_fake_response(body)):
         result = _call()
     assert result["case_reason"] is None
     assert "case_reason" in result["reasoning"].lower()
@@ -69,14 +71,18 @@ def test_correct_classification_of_an_unambiguous_case():
     body = {
         "message": {
             "tool_calls": [
-                {"function": {"arguments": {
-                    "case_reason": "chronic_late_payer_will_eventually_pay",
-                    "reasoning": "History says this business always pays late but pays eventually.",
-                }}}
+                {
+                    "function": {
+                        "arguments": {
+                            "case_reason": "chronic_late_payer_will_eventually_pay",
+                            "reasoning": "History says this business always pays late but pays eventually.",
+                        }
+                    }
+                }
             ]
         }
     }
-    with patch("diagnose_receivable.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.diagnose_receivable.requests.post", return_value=_fake_response(body)):
         result = _call(
             customer_payment_history_signal="always_pays_late_but_pays",
             days_overdue=20,
@@ -96,17 +102,24 @@ def test_ambiguous_case_can_be_misdiagnosed_and_is_passed_through_unvalidated():
     body = {
         "message": {
             "tool_calls": [
-                {"function": {"arguments": {
-                    "case_reason": "payment_process_friction",
-                    "reasoning": "A first-time overdue invoice this early with no reminders yet could just as easily be a cash-flow timing issue.",
-                }}}
+                {
+                    "function": {
+                        "arguments": {
+                            "case_reason": "payment_process_friction",
+                            "reasoning": "A first-time overdue invoice this early with no reminders yet could just as easily be a cash-flow timing issue.",
+                        }
+                    }
+                }
             ]
         }
     }
-    with patch("diagnose_receivable.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.diagnose_receivable.requests.post", return_value=_fake_response(body)):
         result = _call(
-            days_overdue=5, customer_payment_history_signal="first_time_overdue",
-            reminders_sent_count=0, last_reminder_response=None, amount_vs_typical_ratio=1.1,
+            days_overdue=5,
+            customer_payment_history_signal="first_time_overdue",
+            reminders_sent_count=0,
+            last_reminder_response=None,
+            amount_vs_typical_ratio=1.1,
         )
     assert result["case_reason"] == "payment_process_friction"
 
@@ -119,11 +132,18 @@ def test_model_can_return_a_case_reason_outside_the_known_enum():
     body = {
         "message": {
             "tool_calls": [
-                {"function": {"arguments": {"case_reason": "aliens_intervened", "reasoning": "hallucinated"}}}
+                {
+                    "function": {
+                        "arguments": {
+                            "case_reason": "aliens_intervened",
+                            "reasoning": "hallucinated",
+                        }
+                    }
+                }
             ]
         }
     }
-    with patch("diagnose_receivable.requests.post", return_value=_fake_response(body)):
+    with patch("failsafe.diagnose_receivable.requests.post", return_value=_fake_response(body)):
         result = _call()
     assert result["case_reason"] == "aliens_intervened"
 
@@ -131,23 +151,31 @@ def test_model_can_return_a_case_reason_outside_the_known_enum():
 def test_transient_failure_then_success_retries_and_recovers():
     body = {
         "message": {
-            "tool_calls": [{"function": {"arguments": {"case_reason": "cash_flow_delay", "reasoning": "ok"}}}]
+            "tool_calls": [
+                {"function": {"arguments": {"case_reason": "cash_flow_delay", "reasoning": "ok"}}}
+            ]
         }
     }
-    with patch(
-        "diagnose_receivable.requests.post",
-        side_effect=[requests.exceptions.ConnectionError("transient"), _fake_response(body)],
-    ) as mock_post, patch("diagnose_receivable.time.sleep"):
+    with (
+        patch(
+            "failsafe.diagnose_receivable.requests.post",
+            side_effect=[requests.exceptions.ConnectionError("transient"), _fake_response(body)],
+        ) as mock_post,
+        patch("failsafe.diagnose_receivable.time.sleep"),
+    ):
         result = _call()
     assert result["case_reason"] == "cash_flow_delay"
     assert mock_post.call_count == 2
 
 
 def test_all_retries_exhausted_falls_back_without_raising():
-    with patch(
-        "diagnose_receivable.requests.post",
-        side_effect=requests.exceptions.ConnectionError("ollama is down"),
-    ) as mock_post, patch("diagnose_receivable.time.sleep"):
+    with (
+        patch(
+            "failsafe.diagnose_receivable.requests.post",
+            side_effect=requests.exceptions.ConnectionError("ollama is down"),
+        ) as mock_post,
+        patch("failsafe.diagnose_receivable.time.sleep"),
+    ):
         result = _call()
     assert result["case_reason"] is None
     assert mock_post.call_count == diag.MAX_RETRIES
@@ -161,21 +189,30 @@ def test_prompt_never_leaks_the_ground_truth_field_name():
     # inspecting the real function signature rather than trusting the
     # docstring's claim.
     import inspect
+
     params = list(inspect.signature(diag.diagnose_receivable).parameters)
     assert "case_reason" not in params
     assert set(params) == {
-        "days_overdue", "payment_terms", "customer_payment_history_signal",
-        "reminders_sent_count", "last_reminder_response", "amount_vs_typical_ratio",
+        "days_overdue",
+        "payment_terms",
+        "customer_payment_history_signal",
+        "reminders_sent_count",
+        "last_reminder_response",
+        "amount_vs_typical_ratio",
     }
 
 
 def test_no_reminder_sent_yet_is_handled_without_a_response_value():
     body = {
         "message": {
-            "tool_calls": [{"function": {"arguments": {"case_reason": "cash_flow_delay", "reasoning": "ok"}}}]
+            "tool_calls": [
+                {"function": {"arguments": {"case_reason": "cash_flow_delay", "reasoning": "ok"}}}
+            ]
         }
     }
-    with patch("diagnose_receivable.requests.post", return_value=_fake_response(body)) as mock_post:
+    with patch(
+        "failsafe.diagnose_receivable.requests.post", return_value=_fake_response(body)
+    ) as mock_post:
         result = _call(reminders_sent_count=0, last_reminder_response=None)
     assert result["case_reason"] == "cash_flow_delay"
     prompt = mock_post.call_args.kwargs["json"]["messages"][0]["content"]

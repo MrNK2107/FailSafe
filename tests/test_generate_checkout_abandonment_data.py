@@ -7,13 +7,8 @@ ground truth is never leaked into the signals diagnosis actually sees,
 and prove determinism given a seed.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from checkout_abandonment_policy import ABANDONMENT_POLICIES, AbandonmentReason
-from generate_checkout_abandonment_data import (
+from failsafe.checkout_abandonment_policy import ABANDONMENT_POLICIES, AbandonmentReason
+from failsafe.generate_checkout_abandonment_data import (
     CHECKOUT_STAGES,
     DEVICE_TYPES,
     REASON_WEIGHTS,
@@ -21,9 +16,18 @@ from generate_checkout_abandonment_data import (
 )
 
 SIGNAL_FIELDS = {
-    "cart_id", "merchant_id", "customer_id", "item", "amount_paise", "currency",
-    "checkout_stage", "minutes_since_abandonment", "device_type",
-    "is_returning_customer", "abandonment_reason", "simulated_customer_response",
+    "cart_id",
+    "merchant_id",
+    "customer_id",
+    "item",
+    "amount_paise",
+    "currency",
+    "checkout_stage",
+    "minutes_since_abandonment",
+    "device_type",
+    "is_returning_customer",
+    "abandonment_reason",
+    "simulated_customer_response",
 }
 
 
@@ -87,7 +91,8 @@ def test_cluster_a_otp_entry_medium_band_spans_two_ground_truths():
     # "genuine ambiguity" claim is false.
     records = generate(n=300, seed=6)
     cluster = [
-        r for r in records
+        r
+        for r in records
         if r["checkout_stage"] == "otp_entry" and 8 <= r["minutes_since_abandonment"] <= 15
     ]
     reasons_in_cluster = {r["abandonment_reason"] for r in cluster}
@@ -100,7 +105,8 @@ def test_cluster_b_new_customer_card_entry_spans_two_ground_truths():
     # BOTH trust_or_security_concern AND payment_method_unsupported.
     records = generate(n=300, seed=7)
     cluster = [
-        r for r in records
+        r
+        for r in records
         if r["checkout_stage"] == "card_details_entry" and r["is_returning_customer"] is False
     ]
     reasons_in_cluster = {r["abandonment_reason"] for r in cluster}
@@ -111,7 +117,8 @@ def test_low_value_carts_exist_to_exercise_the_gates_value_floor():
     # abandonment_gate.MIN_CART_VALUE_FOR_ACTION_PAISE is Rs 149 - the
     # generator must actually produce some carts below that, or the
     # low-value stopping rule would never fire in a live/demo run.
-    from abandonment_gate import MIN_CART_VALUE_FOR_ACTION_PAISE
+    from failsafe.abandonment_gate import MIN_CART_VALUE_FOR_ACTION_PAISE
+
     records = generate(n=150, seed=8)
     low_value = [r for r in records if r["amount_paise"] < MIN_CART_VALUE_FOR_ACTION_PAISE]
     assert len(low_value) > 0
@@ -123,7 +130,7 @@ def test_deterministic_given_same_seed():
     # cart_id/customer_id use uuid4 (never seeded, exactly like
     # generate_data.py's subscription_id/customer_id) so compare
     # everything else field-by-field.
-    for ra, rb in zip(a, b):
+    for ra, rb in zip(a, b, strict=False):
         for key in SIGNAL_FIELDS - {"cart_id", "customer_id"}:
             assert ra[key] == rb[key]
 

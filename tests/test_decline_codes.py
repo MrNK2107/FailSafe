@@ -6,17 +6,20 @@ gate at all.
 """
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from decline_codes import DECLINE_CODES, POLICY_PATH, RecoveryAction, _load_decline_codes, get_decline_code
+from failsafe.decline_codes import (
+    DECLINE_CODES,
+    POLICY_PATH,
+    RecoveryAction,
+    _load_decline_codes,
+    get_decline_code,
+)
 
 
 def test_every_code_has_a_valid_recovery_action():
-    for code, info in DECLINE_CODES.items():
+    for _code, info in DECLINE_CODES.items():
         assert isinstance(info.allowed_action, RecoveryAction)
 
 
@@ -28,14 +31,24 @@ def test_fraud_code_is_never_a_retry_action():
 
 def test_no_action_policies_have_zero_simulated_success_rate():
     for code, info in DECLINE_CODES.items():
-        if info.allowed_action in (RecoveryAction.NO_ACTION_FRAUD, RecoveryAction.NO_ACTION_UNRECOVERABLE):
-            assert info.simulated_success_rate == 0.0, f"{code} is a no-action policy but has a nonzero success rate"
+        if info.allowed_action in (
+            RecoveryAction.NO_ACTION_FRAUD,
+            RecoveryAction.NO_ACTION_UNRECOVERABLE,
+        ):
+            assert info.simulated_success_rate == 0.0, (
+                f"{code} is a no-action policy but has a nonzero success rate"
+            )
 
 
 def test_actionable_policies_have_a_plausible_success_rate():
     for code, info in DECLINE_CODES.items():
-        if info.allowed_action not in (RecoveryAction.NO_ACTION_FRAUD, RecoveryAction.NO_ACTION_UNRECOVERABLE):
-            assert 0.0 < info.simulated_success_rate <= 1.0, f"{code} has an implausible success rate"
+        if info.allowed_action not in (
+            RecoveryAction.NO_ACTION_FRAUD,
+            RecoveryAction.NO_ACTION_UNRECOVERABLE,
+        ):
+            assert 0.0 < info.simulated_success_rate <= 1.0, (
+                f"{code} has an implausible success rate"
+            )
 
 
 def test_every_recovery_action_has_a_plain_english_glossary_entry():
@@ -48,14 +61,16 @@ def test_every_recovery_action_has_a_plain_english_glossary_entry():
     raw = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
     glossary = raw.get("_action_glossary", {})
     for action in RecoveryAction:
-        assert action.value in glossary, f"{action.value} has no _action_glossary entry in {POLICY_PATH.name}"
+        assert action.value in glossary, (
+            f"{action.value} has no _action_glossary entry in {POLICY_PATH.name}"
+        )
         assert glossary[action.value].strip(), f"{action.value}'s _action_glossary entry is empty"
 
 
 def test_unknown_code_raises_keyerror():
     try:
         get_decline_code("not_a_real_code")
-        assert False, "expected KeyError"
+        raise AssertionError("expected KeyError")
     except KeyError:
         pass
 
@@ -75,26 +90,30 @@ def test_config_typo_in_allowed_action_fails_loudly():
     # enum value - this must raise immediately, never silently load a
     # policy the gate then enforces with total confidence.
     try:
-        _write_and_load({
-            "description": "test",
-            "source": "customer",
-            "allowed_action": "retry_whenever_i_feel_like_it",
-            "simulated_success_rate": 0.5,
-        })
-        assert False, "expected ValueError for invalid allowed_action"
+        _write_and_load(
+            {
+                "description": "test",
+                "source": "customer",
+                "allowed_action": "retry_whenever_i_feel_like_it",
+                "simulated_success_rate": 0.5,
+            }
+        )
+        raise AssertionError("expected ValueError for invalid allowed_action")
     except ValueError as e:
         assert "allowed_action" in str(e)
 
 
 def test_config_typo_in_source_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "source": "the_moon",
-            "allowed_action": "delayed_retry",
-            "simulated_success_rate": 0.5,
-        })
-        assert False, "expected ValueError for invalid source"
+        _write_and_load(
+            {
+                "description": "test",
+                "source": "the_moon",
+                "allowed_action": "delayed_retry",
+                "simulated_success_rate": 0.5,
+            }
+        )
+        raise AssertionError("expected ValueError for invalid source")
     except ValueError as e:
         assert "source" in str(e)
 
@@ -104,39 +123,45 @@ def test_config_out_of_range_success_rate_fails_loudly():
     # corrupt the synthetic simulator (or, worse, any future real-metrics
     # use) rather than fail at load time like allowed_action/source already do.
     try:
-        _write_and_load({
-            "description": "test",
-            "source": "customer",
-            "allowed_action": "delayed_retry",
-            "simulated_success_rate": 5.0,
-        })
-        assert False, "expected ValueError for out-of-range simulated_success_rate"
+        _write_and_load(
+            {
+                "description": "test",
+                "source": "customer",
+                "allowed_action": "delayed_retry",
+                "simulated_success_rate": 5.0,
+            }
+        )
+        raise AssertionError("expected ValueError for out-of-range simulated_success_rate")
     except ValueError as e:
         assert "simulated_success_rate" in str(e)
 
 
 def test_config_negative_success_rate_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "source": "customer",
-            "allowed_action": "delayed_retry",
-            "simulated_success_rate": -0.1,
-        })
-        assert False, "expected ValueError for negative simulated_success_rate"
+        _write_and_load(
+            {
+                "description": "test",
+                "source": "customer",
+                "allowed_action": "delayed_retry",
+                "simulated_success_rate": -0.1,
+            }
+        )
+        raise AssertionError("expected ValueError for negative simulated_success_rate")
     except ValueError as e:
         assert "simulated_success_rate" in str(e)
 
 
 def test_config_non_numeric_success_rate_fails_loudly():
     try:
-        _write_and_load({
-            "description": "test",
-            "source": "customer",
-            "allowed_action": "delayed_retry",
-            "simulated_success_rate": "high",
-        })
-        assert False, "expected ValueError for non-numeric simulated_success_rate"
+        _write_and_load(
+            {
+                "description": "test",
+                "source": "customer",
+                "allowed_action": "delayed_retry",
+                "simulated_success_rate": "high",
+            }
+        )
+        raise AssertionError("expected ValueError for non-numeric simulated_success_rate")
     except ValueError as e:
         assert "simulated_success_rate" in str(e)
 
