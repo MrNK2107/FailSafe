@@ -73,7 +73,7 @@ def test_no_precomputed_is_at_risk_boolean_is_exposed_as_a_signal():
     # signal field names detect.detect_at_risk() takes.
     import inspect
 
-    import failsafe.detect as detect
+    from failsafe import detect
 
     params = set(inspect.signature(detect.detect_at_risk).parameters)
     assert "ground_truth_needs_attention" not in params

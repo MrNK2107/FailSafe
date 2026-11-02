@@ -52,19 +52,27 @@ but it is a genuine behavior difference from running the four scripts
 separately, not an oversight.
 
 SIMULATE is forced True for this script's run() via
-failsafe.razorpay_client.force_simulate(), the same single-knob mechanism
-checkout_abandonment_agent.py/receivables_agent.py use and for the same
-disclosed reason: this repo's own `.env` has real `rzp_test_` keys
-configured, and the real test-mode account has exhausted its payment-link
-quota. Direct programmatic use of any domain's own
+`mcp_server.simulate_mode()` (sets `mcp_server.SIMULATE` plus
+`mcp_server._rp.simulate`; run(force_simulate=False) opts out), as checkout_abandonment_
+agent.py/receivables_agent.py do and for the same disclosed
+reason: this repo's own `.env` already has real `rzp_test_` keys
+configured, and the real test-mode account has already exhausted its
+payment-link quota. Direct programmatic use of any domain's own
 `process_one()` is unaffected.
 """
 
+import argparse
 import asyncio
 import json
+import os
+import subprocess
+import tempfile
+from contextlib import nullcontext
+from pathlib import Path
 
 from mcp import Client
 
+from failsafe import mcp_server as _mcp_server_module
 from failsafe.abandonment_gate import AbandonmentGate
 from failsafe.agent import process_one as _subscription_process_one
 from failsafe.agent_onetime import process_one as _onetime_process_one
@@ -75,15 +83,16 @@ from failsafe.checkout_abandonment_policy import AbandonmentAction
 from failsafe.decline_codes import RecoveryAction
 from failsafe.gate import Gate
 from failsafe.mcp_server import server as mcp_server
+from failsafe.ollama_client import non_negative_int
 from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
-from failsafe.razorpay_client import force_simulate
 from failsafe.receivables_agent import ACTIONABLE as _RECEIVABLES_ACTIONABLE
 from failsafe.receivables_agent import process_one as _receivables_process_one
 from failsafe.receivables_gate import ReceivableGate
 from failsafe.receivables_policy import ReceivableAction
-from failsafe.recovery_pipeline import count_prior_attempts
+from failsafe.recovery_pipeline import count_prior_attempts, reset_circuit_breaker
 
 INTEGRATED_AUDIT_PATH = LOGS_DIR / "audit_log_integrated.jsonl"
+INTEGRATED_CHECKPOINT_PATH = LOGS_DIR / "integrated_checkpoint.jsonl"
 INTEGRATED_RESULTS_PATH = PROJECT_ROOT / "INTEGRATED_RESULTS.md"
 
 _SUBSCRIPTION_LIKE_ACTIONABLE = {
@@ -160,6 +169,78 @@ def identify_domain(record: dict) -> str:
     return matches[0]
 
 
+def _load_checkpoint() -> list[dict]:
+    if not INTEGRATED_CHECKPOINT_PATH.exists():
+        return []
+    results = []
+    with INTEGRATED_CHECKPOINT_PATH.open(encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                print(
+                    f"[checkpoint] warning: skipping corrupted line in {INTEGRATED_CHECKPOINT_PATH}"
+                )
+                continue
+            # A record short-circuited by an open LLM circuit breaker was never
+            # evaluated by the gate - don't treat it as done, retry it on resume.
+            if entry.get("circuit_open"):
+                continue
+            results.append(entry)
+    return results
+
+
+def _append_checkpoint(entry: dict):
+    INTEGRATED_CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(entry, default=str) + "\n"
+    if not INTEGRATED_CHECKPOINT_PATH.exists():
+        with INTEGRATED_CHECKPOINT_PATH.open("w", encoding="utf-8") as f:
+            f.write(line)
+            f.flush()
+            os.fsync(f.fileno())
+        return
+    fd, tmp_path = tempfile.mkstemp(dir=str(INTEGRATED_CHECKPOINT_PATH.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+            with INTEGRATED_CHECKPOINT_PATH.open(encoding="utf-8") as src:
+                tmp.write(src.read())
+            tmp.write(line)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp_path, INTEGRATED_CHECKPOINT_PATH)
+        with INTEGRATED_CHECKPOINT_PATH.open("a", encoding="utf-8") as f:
+            os.fsync(f.fileno())
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        raise
+
+
+def _check_health(skip: bool = False):
+    if skip:
+        return
+    from failsafe.ollama_client import healthcheck
+
+    ok, msg = healthcheck()
+    if not ok:
+        raise SystemExit(f"Healthcheck failed: {msg} (use --skip-healthcheck to bypass)")
+    print(f"[healthcheck] {msg}")
+    from failsafe.razorpay_client import SIMULATE
+
+    if not SIMULATE:
+        try:
+            subprocess.run(["docker", "--version"], capture_output=True, timeout=5, check=True)
+            print("[healthcheck] docker reachable")
+        except Exception as e:
+            raise SystemExit(
+                f"Healthcheck failed: docker not reachable but real Razorpay keys are set (SIMULATE=false): {e} (use --skip-healthcheck to bypass)"
+            )
+
+
 def _load_batches(per_domain: int) -> dict[str, list[dict]]:
     batches = {}
     for name, cfg in DOMAINS.items():
@@ -171,6 +252,18 @@ def _load_batches(per_domain: int) -> dict[str, list[dict]]:
         records = json.loads(cfg["data_path"].read_text(encoding="utf-8"))
         batches[name] = records[:per_domain]
     return batches
+
+
+def _done_key(record: dict) -> tuple[str, str] | None:
+    """Checkpoint key for a record, or None if its domain can't be identified.
+    Unidentifiable records are kept in the stream (None is never a done key)
+    so the main loop logs them as integrated_dispatch_failed and skips them,
+    instead of identify_domain() raising here and aborting the whole run."""
+    try:
+        domain = identify_domain(record)
+    except ValueError:
+        return None
+    return domain, record[DOMAINS[domain]["id_field"]]
 
 
 def _interleave(batches: dict[str, list[dict]]) -> list[dict]:
@@ -187,14 +280,60 @@ def _interleave(batches: dict[str, list[dict]]) -> list[dict]:
     return stream
 
 
-async def run(per_domain: int = 15) -> dict[str, list[dict]]:
+async def run(
+    per_domain: int = 15, skip_healthcheck: bool = False, *, force_simulate: bool = True
+) -> dict[str, list[dict]]:
+    _check_health(skip=skip_healthcheck)
+    reset_circuit_breaker()  # never inherit a tripped breaker from a previous in-process run
     batches = _load_batches(per_domain)
     stream = _interleave(batches)
 
+    checkpoint_entries = _load_checkpoint()
+    done_keys = {(e.get("domain"), e.get("record_id")) for e in checkpoint_entries}
+    stream = [r for r in stream if _done_key(r) not in done_keys]
+    if done_keys:
+        print(
+            f"{len(done_keys)} already done (checkpoint), {len(stream)} remaining after checkpoint filter"
+        )
+
     gates = {name: cfg["make_gate"]() for name, cfg in DOMAINS.items()}
     audits = {name: AuditLogger(cfg["audit_path"]) for name, cfg in DOMAINS.items()}
+    for name, cfg in DOMAINS.items():
+        domain_entries = [e for e in checkpoint_entries if e.get("domain") == name]
+        already_spent = sum(
+            e.get("amount_paise", 0)
+            for e in domain_entries
+            if e.get("final_action") in cfg["actionable_values"] and e.get("gate_executed")
+        )
+        already_seen = {
+            (e["record_id"], e["final_action"])
+            for e in domain_entries
+            if e.get("gate_executed") and e.get("record_id") and e.get("final_action")
+        }
+        gates[name].seed_from_checkpoint(already_spent, already_seen)
+    pooled_total = sum(
+        e.get("amount_paise", 0)
+        for e in checkpoint_entries
+        if e.get("gate_executed")
+        and e.get("final_action")
+        in {v for cfg in DOMAINS.values() for v in cfg["actionable_values"]}
+    )
+    # Reset first (never inherit a previous in-process run's guard state),
+    # then restore the pooled total from the checkpoint.
+    from failsafe import mcp_server as _ms
+
+    _ms.seed_tool_level_guard(pooled_total, set())
+    if pooled_total:
+        print(
+            f"[checkpoint] pooled run_total restored: Rs {pooled_total / 100:.2f} (tool-level guard, see module docstring)"
+        )
     integrated_audit = AuditLogger(INTEGRATED_AUDIT_PATH)
-    integrated_audit.log("integrated_run_started", total_records=len(stream), per_domain=per_domain)
+    integrated_audit.log(
+        "integrated_run_started",
+        total_records=len(stream),
+        per_domain=per_domain,
+        resumed_from_checkpoint=len(done_keys),
+    )
     print(f"Processing {len(stream)} records across {len(DOMAINS)} domains (interleaved)...")
 
     # Cross-run history for the subscription domain's own attempt-cap
@@ -209,16 +348,14 @@ async def run(per_domain: int = 15) -> dict[str, list[dict]]:
     subscription_audit_history = audits["subscription"].read_all()
 
     results: dict[str, list[dict]] = {name: [] for name in DOMAINS}
+    for e in checkpoint_entries:
+        d = e.get("domain")
+        if d in results:
+            results[d].append({k: v for k, v in e.items() if k != "domain"})
 
-    with force_simulate():
+    with _mcp_server_module.simulate_mode(True) if force_simulate else nullcontext():
         async with Client(mcp_server) as client:
             for record in stream:
-                # A record identify_domain() can't classify is skipped and
-                # logged, not fatal to the whole run - mirrors this
-                # project's own "one bad record must not take down a batch"
-                # convention (agent.py's run()), applied to dispatch itself
-                # rather than just to process_one() (found missing here on
-                # a later code review).
                 try:
                     domain = identify_domain(record)
                 except ValueError as e:
@@ -255,6 +392,7 @@ async def run(per_domain: int = 15) -> dict[str, list[dict]]:
                         "tool_result": None,
                     }
                 results[domain].append(result)
+                _append_checkpoint({"domain": domain, "record_id": record_id, **result})
                 integrated_audit.log(
                     "integrated_dispatch",
                     domain=domain,
@@ -342,8 +480,19 @@ def write_integrated_results(results: dict[str, list[dict]]):
     )
 
 
-if __name__ == "__main__":
-    import sys
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="python -m failsafe.integrated_pipeline", description="Run integrated pipeline"
+    )
+    parser.add_argument(
+        "per_domain", nargs="?", type=non_negative_int, default=15, help="Records per domain"
+    )
+    parser.add_argument(
+        "--skip-healthcheck", action="store_true", help="Skip Ollama/docker health checks"
+    )
+    args = parser.parse_args(argv)
+    asyncio.run(run(args.per_domain, skip_healthcheck=args.skip_healthcheck))
 
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 15
-    asyncio.run(run(n))
+
+if __name__ == "__main__":
+    main()

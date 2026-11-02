@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FailSafe Policy What-if</title>
+<meta name="description" content="Edit the decline policy and see, before it ships, which recorded decisions it would change and how much money moves.">
+<style>
+  :root {
+    --ink:#0D1321; --paper:#F5F4EE; --card:#FFFFFF; --line:#E4E2D8; --line-2:#EFEDE5;
+    --text:#1C2433; --muted:#5E6878; --faint:#6B7585;
+    --go:#0B8F63; --go-bg:#E3F5EC; --warn:#B45309; --warn-bg:#FCF0DC; --bad:#B42318; --bad-bg:#FDE8E6;
+    --llm:#5B3FD0; --human:#1D5BD8; --human-bg:#E5EDFD; --focus:#0B8F63;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
+    --sans: "Inter", ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#0B0F17; --card:#121826; --line:#232B3B; --line-2:#1A2130; --text:#E6E8EE; --muted:#A3ADBD; --faint:#8A95A8;
+      --go:#34D399; --go-bg:#0E2A22; --warn:#FBBF24; --warn-bg:#2B2212; --bad:#F87171; --bad-bg:#2E1414; --llm:#A78BFA; --human:#7AA2F7; --human-bg:#121E38;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#0B0F17; --card:#121826; --line:#232B3B; --line-2:#1A2130; --text:#E6E8EE; --muted:#A3ADBD; --faint:#8A95A8;
+    --go:#34D399; --go-bg:#0E2A22; --warn:#FBBF24; --warn-bg:#2B2212; --bad:#F87171; --bad-bg:#2E1414; --llm:#A78BFA; --human:#7AA2F7; --human-bg:#121E38;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; }
+  body { font:14px/1.55 var(--sans); background:var(--paper); color:var(--text); -webkit-font-smoothing:antialiased; }
+  .top { background:var(--ink); color:#F5F4EE; padding:18px 28px 20px; }
+  .top-in { max-width:1320px; margin:0 auto; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; letter-spacing:-.01em; }
+  .brand small { font-weight:500; color:#9AA4B5; font-size:13px; margin-left:4px; }
+  .nav { display:flex; gap:4px; margin-left:8px; flex-wrap:wrap; }
+  .nav a { color:#C8CFDB; text-decoration:none; font-size:13px; padding:5px 10px; border-radius:8px; }
+  .nav a:hover, .nav a:focus-visible, .nav a[aria-current] { background:#1B2333; color:#F5F4EE; outline:none; }
+  .wrap { max-width:1320px; margin:0 auto; padding:22px 28px 40px; }
+  .intro { color:var(--muted); margin:0 0 18px; max-width:760px; }
+  .intro b { color:var(--text); }
+  .main { display:grid; grid-template-columns:minmax(0,1fr) 440px; gap:20px; align-items:start; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:10px 14px; border-bottom:1px solid var(--line-2); vertical-align:top; }
+  th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.07em; font-weight:650; }
+  tbody tr:last-child td { border-bottom:none; }
+  tr.edited td { background:var(--warn-bg); }
+  .code { font:600 13px var(--mono); }
+  .desc { color:var(--muted); font-size:12.5px; margin-top:2px; }
+  .src { font:11px var(--mono); color:var(--muted); border:1px solid var(--line); border-radius:99px; padding:1px 8px; white-space:nowrap; }
+  .n { font-variant-numeric:tabular-nums; color:var(--muted); text-align:right; white-space:nowrap; }
+  select { font:12.5px var(--mono); color:var(--text); background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:6px 8px; width:100%; }
+  select:focus-visible, button:focus-visible, a:focus-visible { outline:2px solid var(--focus); outline-offset:1px; }
+  .was { font:11px var(--mono); color:var(--warn); margin-top:4px; }
+  .side { position:sticky; top:16px; padding:18px 20px; }
+  .big { font-size:40px; font-weight:750; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums; }
+  .big.zero { color:var(--go); } .big.some { color:var(--bad); }
+  .bigl { color:var(--muted); font-size:13px; margin:6px 0 16px; }
+  .rows { display:grid; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-bottom:16px; }
+  .rows div { background:var(--card); display:flex; justify-content:space-between; gap:12px; padding:8px 12px; font-size:13px; }
+  .rows b { font-variant-numeric:tabular-nums; }
+  h3 { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; margin:16px 0 8px; }
+  .tr { font:12.5px var(--mono); display:flex; gap:8px; justify-content:space-between; padding:3px 0; }
+  .tr .arrow { color:var(--faint); }
+  .changes { max-height:260px; overflow:auto; border:1px solid var(--line); border-radius:10px; }
+  .changes a { display:flex; justify-content:space-between; gap:10px; padding:7px 12px; border-bottom:1px solid var(--line-2); font:12px var(--mono); color:var(--text); text-decoration:none; }
+  .changes a:hover { background:var(--paper); }
+  .changes .to { color:var(--warn); }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+  button { font:600 13px var(--sans); border-radius:8px; padding:8px 12px; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--text); }
+  button.primary { background:var(--ink); color:#F5F4EE; border-color:var(--ink); }
+  :root[data-theme="dark"] button.primary { background:#F5F4EE; color:#0D1321; }
+  button:disabled { opacity:.5; cursor:default; }
+  .hint { color:var(--faint); font-size:12px; margin-top:10px; }
+  .hint code { font-family:var(--mono); }
+  .err { color:var(--bad); font-size:13px; margin-top:8px; }
+  .empty { color:var(--muted); font-size:13px; padding:10px 12px; }
+  @media (max-width: 1000px) { .main { grid-template-columns:minmax(0,1fr); } .side { position:static; } }
+  @media (max-width: 560px) {
+    .top, .wrap { padding-left:16px; padding-right:16px; }
+    th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3) { display:none; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#F5F4EE"/><path d="M9 7v18M23 7v18" stroke="#0D1321" stroke-width="3" stroke-linecap="round"/><path d="M5 16h7l3-4 3 8 3-4h6" fill="none" stroke="#0B8F63" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      FailSafe <small>Policy what-if</small>
+    </div>
+    <nav class="nav" aria-label="FailSafe pages"><a href="/">Decision trace</a><a href="/report">Audit report</a><a href="/policy">Policy</a><a href="/policy/edit" aria-current="page">What-if editor</a></nav>
+  </div>
+</header>
+<main class="wrap">
+  <p class="intro">Change how a decline code is handled and FailSafe <b>replays every recorded gate decision</b> under the edited policy: which records flip, how much money moves, and how often the recorded LLM proposals would now be overridden. <b>Nothing is saved here.</b> Download the candidate and open a PR; CI runs the same replay.</p>
+  <div class="main">
+    <section class="card" aria-label="Decline policy">
+      <table>
+        <thead><tr><th>Decline code</th><th>Source</th><th class="n">Decisions</th><th style="width:230px">Action</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="4" class="empty">Loading policy...</td></tr></tbody>
+      </table>
+    </section>
+    <aside class="card side" aria-live="polite" aria-label="Replay result">
+      <div class="big zero" id="big">0</div>
+      <div class="bigl" id="bigl">recorded decisions would change</div>
+      <div class="rows">
+        <div><span>Newly sent to automated collection</span><b id="gain">INR 0.00</b></div>
+        <div><span>Pulled out of automated collection</span><b id="lost">INR 0.00</b></div>
+        <div><span>Still collected, different action</span><b id="moved">0</b></div>
+        <div><span>LLM proposals this policy agrees with</span><b id="agree">-</b></div>
+      </div>
+      <h3>Transitions</h3>
+      <div id="trans"><div class="empty">No edits yet.</div></div>
+      <h3>Records that change</h3>
+      <div class="changes" id="changes"><div class="empty">-</div></div>
+      <div class="btns">
+        <button class="primary" type="button" id="dl" disabled>Download candidate JSON</button>
+        <button type="button" id="copy" disabled>Copy PR summary</button>
+        <button type="button" id="reset" disabled>Reset</button>
+      </div>
+      <div class="err" id="err" role="alert"></div>
+      <p class="hint">Same check from the CLI: <code>python -m failsafe.replay --policy candidate.json</code></p>
+    </aside>
+  </div>
+</main>
+<script>
+(function () {
+  "use strict";
+  var P = null, edits = {}, last = null, timer = null, seq = 0;
+  function $(id) { return document.getElementById(id); }
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      if (k === "text") el.textContent = attrs[k]; else if (k === "cls") el.className = attrs[k]; else el.setAttribute(k, attrs[k]);
+    });
+    (kids || []).forEach(function (c) { if (c != null) el.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return el;
+  }
+  function inr(p) { return "INR " + ((p || 0) / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  try { var th = new URLSearchParams(location.search).get("theme"); if (th === "light" || th === "dark") document.documentElement.setAttribute("data-theme", th); } catch (e) {}
+
+  function rows() {
+    var tb = $("rows"); tb.textContent = "";
+    P.codes.forEach(function (c) {
+      var sel = h("select", { "aria-label": "Action for " + c.code, "data-code": c.code });
+      P.actions.forEach(function (a) { var o = h("option", { value: a, text: a }); if ((edits[c.code] || c.action) === a) o.selected = true; sel.appendChild(o); });
+      sel.title = P.glossary[edits[c.code] || c.action] || "";
+      sel.addEventListener("change", function () {
+        if (sel.value === c.action) delete edits[c.code]; else edits[c.code] = sel.value;
+        rows(); schedule();
+      });
+      var edited = c.code in edits;
+      tb.appendChild(h("tr", { cls: edited ? "edited" : "" }, [
+        h("td", {}, [h("div", { cls: "code", text: c.code }), h("div", { cls: "desc", text: c.description })]),
+        h("td", {}, [h("span", { cls: "src", text: c.source })]),
+        h("td", { cls: "n", text: String(c.decisions) }),
+        h("td", {}, [sel, edited ? h("div", { cls: "was", text: "was " + c.action }) : null])
+      ]));
+    });
+    var n = Object.keys(edits).length;
+    $("reset").disabled = n === 0;
+  }
+
+  function schedule() { clearTimeout(timer); timer = setTimeout(run, 150); }
+
+  function run() {
+    var my = ++seq;
+    $("err").textContent = "";
+    fetch("/api/whatif", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ overrides: edits }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function (j) { if (my === seq) show(j); })
+      .catch(function (e) { $("err").textContent = "What-if failed: " + e.message; });
+  }
+
+  function show(j) {
+    last = j;
+    var n = j.changed;
+    $("big").textContent = String(n);
+    $("big").className = "big " + (n ? "some" : "zero");
+    $("bigl").textContent = "of " + j.decisions + " recorded decisions would change";
+    $("gain").textContent = inr(j.money_newly_collected_paise);
+    $("lost").textContent = inr(j.money_pulled_back_paise);
+    $("moved").textContent = j.rerouted.records + " records, " + inr(j.rerouted.paise);
+    var a = j.llm_agreement;
+    $("agree").textContent = a.scored ? a.agree + "/" + a.scored + " (" + Math.round(100 * a.agree / a.scored) + "%)" : "-";
+    var tr = $("trans"); tr.textContent = "";
+    if (!j.transitions.length) tr.appendChild(h("div", { cls: "empty", text: Object.keys(edits).length ? "These edits change no recorded decision." : "No edits yet." }));
+    j.transitions.forEach(function (t) { tr.appendChild(h("div", { cls: "tr" }, [h("span", {}, [t.from, h("span", { cls: "arrow", text: "  ->  " }), t.to]), h("b", { text: String(t.records) })])); });
+    var ch = $("changes"); ch.textContent = "";
+    if (!j.changes.length) ch.appendChild(h("div", { cls: "empty", text: "-" }));
+    j.changes.forEach(function (c) {
+      ch.appendChild(h("a", { href: "/#" + encodeURIComponent(c.record_id) + "@" + c.run, title: c.reason }, [h("span", { text: c.record_id }), h("span", { cls: "to", text: c.replayed })]));
+    });
+    var has = Object.keys(edits).length > 0;
+    $("dl").disabled = !has; $("copy").disabled = !has;
+  }
+
+  $("reset").addEventListener("click", function () { edits = {}; rows(); run(); });
+  $("dl").addEventListener("click", function () {
+    if (!last) return;
+    var blob = new Blob([JSON.stringify(last.candidate, null, 2) + "\n"], { type: "application/json" });
+    var a = h("a", { href: URL.createObjectURL(blob), download: "decline_policy.candidate.json" });
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+  $("copy").addEventListener("click", function () {
+    if (!last || !navigator.clipboard) return;
+    navigator.clipboard.writeText(last.markdown).then(function () { $("copy").textContent = "Copied"; setTimeout(function () { $("copy").textContent = "Copy PR summary"; }, 1500); });
+  });
+
+  // ?edit=code:action,code:action preloads edits (used for screenshots and links)
+  fetch("/api/policy").then(function (r) { return r.json(); }).then(function (p) {
+    P = p;
+    try {
+      (new URLSearchParams(location.search).get("edit") || "").split(",").forEach(function (pair) {
+        var kv = pair.split(":");
+        if (kv.length === 2 && P.actions.indexOf(kv[1]) >= 0 && P.codes.some(function (c) { return c.code === kv[0] && c.action !== kv[1]; })) edits[kv[0]] = kv[1];
+      });
+    } catch (e) {}
+    rows(); run();
+  }).catch(function (e) { $("rows").textContent = ""; $("err").textContent = "Could not load the policy: " + e.message; });
+})();
+</script>
+</body>
+</html>

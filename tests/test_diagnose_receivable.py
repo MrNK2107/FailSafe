@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-import failsafe.diagnose_receivable as diag
+from failsafe import diagnose_receivable as diag
 
 
 def _fake_response(json_body: dict):

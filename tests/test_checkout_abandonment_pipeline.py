@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pytest
 from mcp import Client
 
-import failsafe.mcp_server as mcp_server
+from failsafe import mcp_server
 from failsafe.abandonment_gate import (
     MIN_CART_VALUE_FOR_ACTION_PAISE,
     STALE_ABANDONMENT_MINUTES_THRESHOLD,
@@ -26,7 +26,6 @@ from failsafe.abandonment_gate import (
 )
 from failsafe.audit_log import AuditLogger
 from failsafe.checkout_abandonment_agent import process_one
-from failsafe.razorpay_client import force_simulate
 
 
 def _run(cart: dict, diagnosis_return=None, inject_failure=None):
@@ -40,7 +39,10 @@ def _run(cart: dict, diagnosis_return=None, inject_failure=None):
             return await process_one(client, gate, audit, cart, inject_failure=inject_failure)
 
     try:
-        with force_simulate():
+        with (
+            patch.object(mcp_server, "SIMULATE", True),
+            patch.object(mcp_server._rp, "simulate", True),
+        ):
             if diagnosis_return is not None:
                 with patch(
                     "failsafe.checkout_abandonment_agent.diagnose_abandonment_reason",

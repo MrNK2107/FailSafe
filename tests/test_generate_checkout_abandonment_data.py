@@ -130,7 +130,7 @@ def test_deterministic_given_same_seed():
     # cart_id/customer_id use uuid4 (never seeded, exactly like
     # generate_data.py's subscription_id/customer_id) so compare
     # everything else field-by-field.
-    for ra, rb in zip(a, b, strict=False):
+    for ra, rb in zip(a, b):
         for key in SIGNAL_FIELDS - {"cart_id", "customer_id"}:
             assert ra[key] == rb[key]
 

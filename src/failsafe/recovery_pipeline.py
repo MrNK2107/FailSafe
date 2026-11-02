@@ -47,6 +47,13 @@ signal fields at all) - see detection_live_demo.py for the standalone
 demonstration of this stage wired into the real pipeline end to end.
 """
 
+import asyncio
+import inspect
+import os
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from typing import Any
+
 from mcp import Client
 
 from failsafe.audit_log import AuditLogger
@@ -54,7 +61,145 @@ from failsafe.decline_codes import DECLINE_CODES, RecoveryAction, get_decline_co
 from failsafe.detect import LEAVE_ALONE, NEEDS_ATTENTION, detect_at_risk
 from failsafe.diagnose import diagnose_decline_code
 from failsafe.gate import MAX_ATTEMPTS_PER_SUBSCRIPTION, Gate
-from failsafe.ollama_client import propose_action
+from failsafe.mcp_tool_errors import log_tool_error, route_tool_error_to_review, tool_call_failed
+
+CIRCUIT_THRESHOLD = 5
+
+
+def _invalid_action_threshold_from_env(default: int = CIRCUIT_THRESHOLD) -> int:
+    """FAILSAFE_INVALID_ACTION_THRESHOLD: consecutive *invalid* (non-enum)
+    actions that trip the breaker on their own. Falls back to the default on
+    a missing, non-integer or < 1 value - a bad env var must never disable
+    the breaker."""
+    raw = os.getenv("FAILSAFE_INVALID_ACTION_THRESHOLD")
+    try:
+        value = int(raw) if raw is not None else default
+    except ValueError:
+        return default
+    return value if value >= 1 else default
+
+
+# A model that keeps answering, but with garbage actions outside the enum,
+# is as broken as one that times out: it used to reset the streak (counted
+# as a "success") and so could never trip the breaker. Invalid actions now
+# count towards the general fallback streak AND have their own (separately
+# configurable) consecutive-invalid threshold.
+INVALID_ACTION_THRESHOLD = _invalid_action_threshold_from_env()
+_VALID_ACTIONS = frozenset(a.value for a in RecoveryAction)
+_consecutive_fallbacks = 0
+_consecutive_invalid = 0
+_circuit_open = False
+
+
+def reset_circuit_breaker():
+    global _consecutive_fallbacks, _consecutive_invalid, _circuit_open
+    _consecutive_fallbacks = 0
+    _consecutive_invalid = 0
+    _circuit_open = False
+
+
+def _record_success():
+    global _consecutive_fallbacks, _consecutive_invalid
+    _consecutive_fallbacks = 0
+    _consecutive_invalid = 0
+
+
+def _trip(audit: AuditLogger, id_kwargs: dict, cause: str) -> None:
+    global _circuit_open
+    if _circuit_open:
+        return
+    _circuit_open = True
+    audit.log(
+        "circuit_open",
+        cause=cause,
+        consecutive_fallbacks=_consecutive_fallbacks,
+        consecutive_invalid_actions=_consecutive_invalid,
+        threshold=CIRCUIT_THRESHOLD,
+        invalid_action_threshold=INVALID_ACTION_THRESHOLD,
+        **id_kwargs,
+    )
+
+
+def _record_fallback(audit: AuditLogger, id_kwargs: dict):
+    """An unusable proposal (no tool call / unparseable / request failure)."""
+    global _consecutive_fallbacks, _consecutive_invalid
+    _consecutive_fallbacks += 1
+    _consecutive_invalid = 0
+    if _consecutive_fallbacks >= CIRCUIT_THRESHOLD:
+        _trip(audit, id_kwargs, "consecutive_fallbacks")
+
+
+def _record_invalid_action(audit: AuditLogger, id_kwargs: dict):
+    """A proposal whose action is not a valid RecoveryAction."""
+    global _consecutive_fallbacks, _consecutive_invalid
+    _consecutive_fallbacks += 1
+    _consecutive_invalid += 1
+    if _consecutive_invalid >= INVALID_ACTION_THRESHOLD:
+        _trip(audit, id_kwargs, "consecutive_invalid_actions")
+    elif _consecutive_fallbacks >= CIRCUIT_THRESHOLD:
+        _trip(audit, id_kwargs, "consecutive_fallbacks")
+
+
+# Dependency-injection seam for the "propose" step. None (the default)
+# means "use the real async LLM client". Tests, the offline demo and any
+# other caller can inject a stand-in via set_proposer()/use_proposer() -
+# production code never inspects whether it is talking to a mock.
+# A proposer is called as proposer(record, description, source, *,
+# situation, id_field, record_label) and may return a dict or an awaitable
+# of one.
+Proposer = Callable[..., Any]
+proposer: Proposer | None = None
+
+
+def set_proposer(fn: Proposer | None) -> Proposer | None:
+    """Install `fn` as the proposer (None restores the real LLM). Returns the previous one."""
+    global proposer
+    previous = proposer
+    proposer = fn
+    return previous
+
+
+@contextmanager
+def use_proposer(fn: Proposer | None) -> Iterator[Proposer | None]:
+    """Temporarily inject a proposer for the duration of a `with` block."""
+    previous = set_proposer(fn)
+    try:
+        yield fn
+    finally:
+        set_proposer(previous)
+
+
+async def _default_propose_action(
+    record, description, source, *, situation, id_field, record_label
+) -> dict:
+    from failsafe.ollama_client import propose_action_async
+
+    return await propose_action_async(
+        record,
+        description,
+        source,
+        situation=situation,
+        id_field=id_field,
+        record_label=record_label,
+    )
+
+
+async def _call_propose_action(
+    record, description, source, situation, id_field, record_label
+) -> dict:
+    fn = proposer if proposer is not None else _default_propose_action
+    result = fn(
+        record,
+        description,
+        source,
+        situation=situation,
+        id_field=id_field,
+        record_label=record_label,
+    )
+    if inspect.isawaitable(result):
+        result = await result
+    return result
+
 
 LEFT_ALONE_BY_DETECTION = "left_alone_by_detection"
 
@@ -90,6 +235,24 @@ def extract_tool_text(call) -> str | None:
         return None
     first = call.content[0]
     return getattr(first, "text", None)
+
+
+async def _flag_for_review(
+    client: Client, audit: AuditLogger, record_id: str, reason: str, id_kwargs: dict
+) -> tuple[str | None, bool]:
+    """Call flag_for_manual_review; audit it, and audit an MCP tool error if it failed.
+    Returns (tool_result text, failed)."""
+    call = await client.call_tool(
+        "flag_for_manual_review", {"subscription_id": record_id, "reason": reason}
+    )
+    tool_result = extract_tool_text(call)
+    audit.log("mcp_tool_call", tool="flag_for_manual_review", result=tool_result, **id_kwargs)
+    failed = tool_call_failed(call)
+    if failed:
+        log_tool_error(
+            audit, tool="flag_for_manual_review", error=tool_result, routed_to=None, **id_kwargs
+        )
+    return tool_result, failed
 
 
 async def process_record(
@@ -150,6 +313,29 @@ async def process_record(
     """
     record_id = record[id_field]
     id_kwargs = {id_field: record_id}
+    if _circuit_open:
+        audit.log(
+            "circuit_open_short_circuit",
+            reason="circuit_open",
+            threshold=CIRCUIT_THRESHOLD,
+            **id_kwargs,
+        )
+        return {
+            **id_kwargs,
+            "amount_paise": record.get("amount_paise"),
+            "decline_code": record.get("decline_code"),
+            "diagnosed_decline_code": None,
+            "diagnosis_matched_ground_truth": None,
+            "detection_classification": None,
+            "detection_matched_ground_truth": None,
+            "final_action": RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
+            "gate_executed": False,
+            "llm_matched_policy": False,
+            "llm_proposed": False,
+            "simulated_customer_response": False,
+            "tool_result": None,
+            "circuit_open": True,
+        }
 
     # Populated only when run_detection=True and the call actually returned
     # a classification (not a failure) - threaded into every return dict
@@ -247,6 +433,7 @@ async def process_record(
                     "final_action": LEFT_ALONE_BY_DETECTION,
                     "gate_executed": False,
                     "llm_matched_policy": None,
+                    "llm_proposed": False,
                     "simulated_customer_response": False,
                     "tool_result": None,
                 }
@@ -279,12 +466,11 @@ async def process_record(
             fallback_action=RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
             **id_kwargs,
         )
-        call = await client.call_tool(
-            "flag_for_manual_review", {"subscription_id": record_id, "reason": reason}
+        tool_result, flag_failed = await _flag_for_review(
+            client, audit, record_id, reason, id_kwargs
         )
-        tool_result = extract_tool_text(call)
-        audit.log("mcp_tool_call", tool="flag_for_manual_review", result=tool_result, **id_kwargs)
         return {
+            **({"tool_error": True} if flag_failed else {}),
             **id_kwargs,
             "amount_paise": record["amount_paise"],
             "decline_code": record["decline_code"],
@@ -295,6 +481,7 @@ async def process_record(
             "final_action": RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
             "gate_executed": True,
             "llm_matched_policy": False,
+            "llm_proposed": False,
             "simulated_customer_response": False,
             "tool_result": tool_result,
         }
@@ -335,14 +522,11 @@ async def process_record(
                 f"Diagnosis failed or returned an unrecognized code "
                 f"({diagnosed_code!r}) from raw signal - needs human review."
             )
-            call = await client.call_tool(
-                "flag_for_manual_review", {"subscription_id": record_id, "reason": reason}
-            )
-            tool_result = extract_tool_text(call)
-            audit.log(
-                "mcp_tool_call", tool="flag_for_manual_review", result=tool_result, **id_kwargs
+            tool_result, flag_failed = await _flag_for_review(
+                client, audit, record_id, reason, id_kwargs
             )
             return {
+                **({"tool_error": True} if flag_failed else {}),
                 **id_kwargs,
                 "amount_paise": record["amount_paise"],
                 "decline_code": record["decline_code"],
@@ -353,6 +537,7 @@ async def process_record(
                 "final_action": RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
                 "gate_executed": True,
                 "llm_matched_policy": False,
+                "llm_proposed": False,
                 "simulated_customer_response": False,
                 "tool_result": tool_result,
             }
@@ -367,7 +552,11 @@ async def process_record(
             **id_kwargs,
         )
 
-    effective_code = diagnosed_code if raw_signal else record["decline_code"]
+    # diagnosed_code is never None here when raw_signal is set (that case
+    # returned above); the explicit check just lets the type checker see it.
+    effective_code: str = (
+        diagnosed_code if (raw_signal and diagnosed_code is not None) else record["decline_code"]
+    )
     policy = get_decline_code(effective_code)
 
     # Deterministic, on-demand versions of D4 (BUILD_LOG.md §7.3) for live
@@ -385,16 +574,12 @@ async def process_record(
             "reasoning": "[injected for demo] simulated: model proposed an action outside the known enum",
         }
     else:
-        # propose_action's prompt embeds record["decline_code"] directly -
-        # it must see the DIAGNOSED code, never the ground-truth one, or
-        # the "intervention selection" stage would silently launder ground
-        # truth back in through a side door even after diagnosis ran.
         action_input_record = (
             record
             if effective_code == record["decline_code"]
             else {**record, "decline_code": effective_code}
         )
-        proposal = propose_action(
+        proposal = await _call_propose_action(
             action_input_record,
             policy.description,
             policy.source.value,
@@ -403,6 +588,16 @@ async def process_record(
             record_label=record_label,
         )
     llm_action_raw = proposal["action"]
+    # True only when the model produced a usable, in-enum action - the only
+    # records where "the gate overrode the LLM" is meaningful (see
+    # override_metrics()).
+    llm_proposed = isinstance(llm_action_raw, str) and llm_action_raw in _VALID_ACTIONS
+    if llm_action_raw is None:
+        _record_fallback(audit, id_kwargs)
+    elif llm_proposed:
+        _record_success()
+    else:
+        _record_invalid_action(audit, id_kwargs)
 
     # Demo mode for the compliant-escalation cross-run stopping rule
     # (gate.py MAX_ATTEMPTS_PER_SUBSCRIPTION): forces this record's
@@ -465,10 +660,18 @@ async def process_record(
         gate_reason=decision.reason,
         final_action=decision.final_action.value,
         prior_attempt_count=prior_attempt_count,
+        # The gate's remaining inputs, so `python -m failsafe.replay` can re-run
+        # this exact decision later without the dataset.
+        amount_paise=record["amount_paise"],
+        halted_days_ago=record.get("halted_days_ago"),
         **id_kwargs,
     )
 
     tool_result = None
+    executed = decision.execute
+    # Set when an MCP tool call errored: the action did NOT happen, whatever
+    # the gate decided. See src/failsafe/mcp_tool_errors.py.
+    tool_error_fields: dict[str, Any] = {}
     if decision.execute and decision.final_action in (
         RecoveryAction.IMMEDIATE_RETRY,
         RecoveryAction.DELAYED_RETRY,
@@ -486,16 +689,26 @@ async def process_record(
         call = await client.call_tool(tool_name, args)
         tool_result = extract_tool_text(call)
         audit.log("mcp_tool_call", tool=tool_name, arguments=args, result=tool_result, **id_kwargs)
+        if tool_call_failed(call):
+            executed = False
+            review_reason = await route_tool_error_to_review(
+                client,
+                audit,
+                tool=tool_name,
+                error=tool_result,
+                record_id=record_id,
+                id_kwargs=id_kwargs,
+            )
+            tool_error_fields = {"tool_error": True, "manual_review_reason": review_reason}
     elif decision.final_action in (
         RecoveryAction.NO_ACTION_FRAUD,
         RecoveryAction.NO_ACTION_UNRECOVERABLE,
     ):
-        call = await client.call_tool(
-            "flag_for_manual_review",
-            {"subscription_id": record_id, "reason": decision.reason},
+        tool_result, flag_failed = await _flag_for_review(
+            client, audit, record_id, decision.reason, id_kwargs
         )
-        tool_result = extract_tool_text(call)
-        audit.log("mcp_tool_call", tool="flag_for_manual_review", result=tool_result, **id_kwargs)
+        if flag_failed:
+            tool_error_fields = {"tool_error": True}
 
     return {
         **id_kwargs,
@@ -506,10 +719,12 @@ async def process_record(
         "detection_classification": detection_classification,
         "detection_matched_ground_truth": detection_matched_ground_truth,
         "final_action": decision.final_action.value,
-        "gate_executed": decision.execute,
+        "gate_executed": executed,
         "llm_matched_policy": decision.llm_matched_policy,
+        "llm_proposed": llm_proposed,
         "simulated_customer_response": record["simulated_customer_response"],
         "tool_result": tool_result,
+        **tool_error_fields,
     }
 
 
@@ -532,3 +747,46 @@ def render_decline_code_table(results: list[dict]) -> list[str]:
     for (code, action), count in sorted(seen.items()):
         lines.append(f"| {code} | {count} | {action} |")
     return lines
+
+
+def override_metrics(results: list[dict]) -> dict:
+    """Both override metrics, side by side.
+
+    - legacy `override_rate`: records with llm_matched_policy falsy / ALL
+      records. Counts records where the model never proposed anything usable
+      (unknown decline code, diagnosis failure, parse failure, invalid action,
+      open circuit, crash) as "overrides", which inflates it. Kept unchanged
+      because published numbers use it.
+    - corrected `override_rate_of_proposals`: of the records where the model
+      DID propose a valid action (`llm_proposed`), the share the gate changed.
+      Rows from an older checkpoint without the field are counted in
+      `unknown` and excluded from both parts of the corrected ratio.
+    """
+    total = len(results)
+    overridden = sum(1 for r in results if not r.get("llm_matched_policy"))
+    proposals = [r for r in results if r.get("llm_proposed") is True]
+    unknown = sum(1 for r in results if "llm_proposed" not in r)
+    overridden_proposals = sum(1 for r in proposals if r.get("llm_matched_policy") is False)
+    return {
+        "total": total,
+        "overridden": overridden,
+        "override_rate": overridden / total if total else 0.0,
+        "proposals": len(proposals),
+        "overridden_proposals": overridden_proposals,
+        "override_rate_of_proposals": overridden_proposals / len(proposals) if proposals else 0.0,
+        "no_proposal": total - len(proposals) - unknown,
+        "unknown": unknown,
+    }
+
+
+def render_corrected_override_line(results: list[dict]) -> str:
+    m = override_metrics(results)
+    line = (
+        f"- Corrected metric - LLM proposals the gate overrode, of records where the LLM actually "
+        f"proposed a valid action: **{m['overridden_proposals']}/{m['proposals']}** "
+        f"({m['override_rate_of_proposals'] * 100:.0f}%; {m['no_proposal']} records had no usable proposal "
+        f"and are excluded - the line above counts them as overrides)"
+    )
+    if m["unknown"]:
+        line += f" [{m['unknown']} checkpointed records predate this field and are excluded]"
+    return line

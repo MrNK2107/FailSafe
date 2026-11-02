@@ -19,12 +19,13 @@ Deliberately separate from agent.py's main 150-record pipeline:
     for real on every record - policy match, spending cap, idempotency -
     exactly as it would for an LLM proposal.
 
-Usage: python real_mcp_demo.py [N]   (default N=5)
+Usage: python -m failsafe.real_mcp_demo [N]   (default N=5)
 """
 
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 from mcp import Client
 
@@ -32,7 +33,7 @@ from failsafe.decline_codes import RecoveryAction, get_decline_code
 from failsafe.gate import Gate
 from failsafe.mcp_server import server as mcp_server
 from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
-from failsafe.razorpay_client import simulate_mode
+from failsafe.razorpay_client import SIMULATE
 
 DATA_PATH = DATA_DIR / "halted_subscriptions.json"
 LOG_PATH = LOGS_DIR / "real_mcp_server_run.jsonl"
@@ -57,7 +58,7 @@ def _pick_sample(subscriptions: list[dict], n: int) -> list[dict]:
         "card_expired",  # payment_link_nudge
         "authentication_failed",  # payment_link_nudge
     ]
-    by_code = {}
+    by_code: dict[str, dict] = {}
     for s in subscriptions:
         by_code.setdefault(s["decline_code"], s)
     sample = [by_code[c] for c in wanted_codes if c in by_code]
@@ -69,7 +70,7 @@ def _log(entries: list[dict], **fields):
 
 
 async def run(n: int = 5):
-    if simulate_mode():
+    if SIMULATE:
         raise SystemExit(
             "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET are not set to real rzp_test_ "
             "keys in .env - this script requires them (the official MCP server "
@@ -113,7 +114,7 @@ async def run(n: int = 5):
                         "amount_paise": sub["amount_paise"],
                     }
                 call = await client.call_tool(tool_name, args)
-                tool_result = call.content[0].text if call.content else None
+                tool_result = getattr(call.content[0], "text", None) if call.content else None
 
             entry = {
                 "subscription_id": sub["subscription_id"],

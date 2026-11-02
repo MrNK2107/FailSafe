@@ -66,6 +66,7 @@ import datetime
 import json
 import random
 import uuid
+from pathlib import Path
 
 from failsafe.paths import DATA_DIR
 from failsafe.receivables_policy import RECEIVABLE_POLICIES
@@ -263,7 +264,7 @@ def main():
     OUTPUT_PATH.write_text(json.dumps(records, indent=2), encoding="utf-8")
     print(f"Wrote {len(records)} synthetic overdue-receivable records to {OUTPUT_PATH}")
 
-    by_reason = {}
+    by_reason: dict[str, int] = {}
     for r in records:
         by_reason[r["case_reason"]] = by_reason.get(r["case_reason"], 0) + 1
     for reason, count in sorted(by_reason.items()):

@@ -21,7 +21,7 @@ from failsafe.checkout_abandonment_policy import (
 
 
 def test_every_reason_has_a_valid_action():
-    for _reason, info in ABANDONMENT_POLICIES.items():
+    for reason, info in ABANDONMENT_POLICIES.items():
         assert isinstance(info.allowed_action, AbandonmentAction)
 
 
@@ -66,7 +66,7 @@ def test_gate_only_actions_never_appear_as_a_policy_rows_allowed_action():
 def test_unknown_reason_raises_keyerror():
     try:
         get_abandonment_policy("not_a_real_reason")
-        raise AssertionError("expected KeyError")
+        assert False, "expected KeyError"
     except KeyError:
         pass
 
@@ -90,7 +90,7 @@ def test_config_typo_in_allowed_action_fails_loudly():
                 "simulated_recovery_rate": 0.5,
             }
         )
-        raise AssertionError("expected ValueError for invalid allowed_action")
+        assert False, "expected ValueError for invalid allowed_action"
     except ValueError as e:
         assert "allowed_action" in str(e)
 
@@ -110,7 +110,7 @@ def test_config_unknown_reason_key_fails_loudly():
         path = Path(f.name)
     try:
         _load_abandonment_policy(path)
-        raise AssertionError("expected ValueError for unknown reason key")
+        assert False, "expected ValueError for unknown reason key"
     except ValueError as e:
         assert "AbandonmentReason" in str(e)
     finally:
@@ -126,7 +126,7 @@ def test_config_out_of_range_recovery_rate_fails_loudly():
                 "simulated_recovery_rate": 5.0,
             }
         )
-        raise AssertionError("expected ValueError for out-of-range simulated_recovery_rate")
+        assert False, "expected ValueError for out-of-range simulated_recovery_rate"
     except ValueError as e:
         assert "simulated_recovery_rate" in str(e)
 
@@ -140,7 +140,7 @@ def test_config_negative_recovery_rate_fails_loudly():
                 "simulated_recovery_rate": -0.2,
             }
         )
-        raise AssertionError("expected ValueError for negative simulated_recovery_rate")
+        assert False, "expected ValueError for negative simulated_recovery_rate"
     except ValueError as e:
         assert "simulated_recovery_rate" in str(e)
 
@@ -154,7 +154,7 @@ def test_config_non_numeric_recovery_rate_fails_loudly():
                 "simulated_recovery_rate": "lots",
             }
         )
-        raise AssertionError("expected ValueError for non-numeric simulated_recovery_rate")
+        assert False, "expected ValueError for non-numeric simulated_recovery_rate"
     except ValueError as e:
         assert "simulated_recovery_rate" in str(e)
 

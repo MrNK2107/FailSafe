@@ -29,8 +29,8 @@ from unittest.mock import patch
 
 import pytest
 
-import failsafe.integrated_pipeline as ip
-import failsafe.mcp_server as mcp_server
+from failsafe import integrated_pipeline as ip
+from failsafe import mcp_server
 from failsafe.gate import MAX_ACTION_AMOUNT_PAISE
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -142,10 +142,15 @@ def _run_mixed_batch(records_by_domain: dict[str, list[dict]], mocks: dict[str, 
 
         integrated_audit_path = tmp_dir / "audit_integrated.jsonl"
         integrated_results_path = tmp_dir / "INTEGRATED_RESULTS.md"
+        integrated_checkpoint_path = tmp_dir / "integrated_checkpoint.jsonl"
 
         with (
             patch.object(ip, "INTEGRATED_AUDIT_PATH", integrated_audit_path),
             patch.object(ip, "INTEGRATED_RESULTS_PATH", integrated_results_path),
+            patch.object(ip, "INTEGRATED_CHECKPOINT_PATH", integrated_checkpoint_path),
+            patch("failsafe.integrated_pipeline._check_health"),
+            patch("failsafe.llm_client.healthcheck", return_value=(True, "mocked")),
+            patch("failsafe.ollama_client.healthcheck", return_value=(True, "mocked")),
         ):
             active_patches = [patch(target, return_value=value) for target, value in mocks.values()]
             for p in active_patches:
@@ -176,7 +181,7 @@ _STANDARD_MOCKS = {
         {"decline_code": "insufficient_funds", "reasoning": "test"},
     ),
     "propose_action": (
-        "failsafe.recovery_pipeline.propose_action",
+        "failsafe.recovery_pipeline.proposer",
         {"action": "delayed_retry", "reasoning": "test"},
     ),
     "checkout_diagnosis": (

@@ -22,7 +22,7 @@ Distribution is deliberately NOT uniform and NOT flattering:
 it's the only way to ever measure diagnosis accuracy honestly). What
 changed: each record now ALSO carries a `raw_decline_message` field - a
 raw, human/bank-style decline string that a real diagnosis step
-(src/diagnose.py) has to interpret to infer decline_code, rather than
+(src/failsafe/diagnose.py) has to interpret to infer decline_code, rather than
 being handed decline_code directly. See RAW_SIGNAL_TEMPLATES below for why
 this is genuinely ambiguous in places, not just a reworded restatement of
 the code - closes the gap documented in PS_REQUIREMENTS_DEBATE.md Round 2
@@ -32,6 +32,7 @@ the code - closes the gap documented in PS_REQUIREMENTS_DEBATE.md Round 2
 import json
 import random
 import uuid
+from pathlib import Path
 
 from failsafe.decline_codes import DECLINE_CODES
 from failsafe.paths import DATA_DIR

@@ -18,11 +18,12 @@ state, not the Gate instance's. It exists specifically so that a caller
 that skips the gate entirely (a bug in a future second caller, not
 anything agent.py does today) still can't overspend or double-act through
 this file - see gate.py's module docstring and README.md §6 for why this
-was worth adding. Scope is deliberately narrower than Gate: this state is
-per-process and never seeded from a checkpoint the way Gate.seed_from_checkpoint
-is, so it catches one run reprocessing the same subscription, not a
-resumed run's history - the primary gate is still what's authoritative
-across a resume.
+was worth adding. This state is process-global: agent.run() and agent_onetime.run() reset it
+at the start of every run (reset_tool_level_guard) and then restore it from
+the run's checkpoint (seed_tool_level_guard), the same way
+Gate.seed_from_checkpoint restores the gate, so nothing leaks from one
+in-process run into the next and a resumed run still refuses to repeat
+an already-executed money-moving call.
 
 Money-moving tools (create_payment_link, create_retry_order) route through
 Razorpay's OWN OFFICIAL MCP server (razorpay_mcp_client.py -> the real
@@ -35,12 +36,15 @@ account.
 
 import json
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
 from failsafe.gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
 from failsafe.paths import DATA_DIR
-from failsafe.razorpay_client import RazorpayClient, simulate_mode
+from failsafe.razorpay_client import SIMULATE, RazorpayClient
 from failsafe.razorpay_mcp_client import call_official_tool
 
 DATA_PATH = DATA_DIR / "halted_subscriptions.json"
@@ -51,8 +55,28 @@ DATA_PATH = DATA_DIR / "halted_subscriptions.json"
 # unless a real one is provided.
 PARTNER_LINKED_ACCOUNT_ID = os.getenv("RAZORPAY_PARTNER_LINKED_ACCOUNT_ID", "acc_sim_partner001")
 
-server = MCPServer(name="failsafe-recovery-agent")
+server = MCPServer(name="razorpay-recovery-agent")
 _rp = RazorpayClient()
+
+
+@contextmanager
+def simulate_mode(enabled: bool = True) -> Iterator[None]:
+    """Explicitly set simulate mode for the money-moving tools, then restore it.
+
+    Two switches have to agree: this module's SIMULATE flag (checked by the
+    tools before routing to the official Razorpay MCP server) and `_rp.simulate`
+    (bound once when RazorpayClient was constructed at import time). Callers
+    that must never touch a real account - the live demos and the domain
+    agents' run() - use this instead of patching both by hand.
+    """
+    global SIMULATE
+    previous = (SIMULATE, _rp.simulate)
+    SIMULATE = enabled
+    _rp.simulate = enabled
+    try:
+        yield
+    finally:
+        SIMULATE, _rp.simulate = previous
 
 
 class ToolLevelCapExceeded(Exception):
@@ -88,13 +112,33 @@ def _enforce_tool_level_cap(subscription_id: str, tool_name: str, amount_paise: 
     _tool_run_total_paise += amount_paise
 
 
-def _reset_tool_level_guard_for_tests() -> None:
-    """Test-only: this module's guard state is process-global by design
-    (see docstring), so tests that call the tools directly, more than
-    once, must reset it between cases rather than restarting the process."""
+def reset_tool_level_guard() -> None:
+    """Clear this module's process-global guard state. Called at the start of
+    every agent run so a second run in the same process (tests, a notebook,
+    a long-lived host) never inherits the previous run's spend or seen keys."""
     global _tool_run_total_paise
     _tool_seen.clear()
     _tool_run_total_paise = 0
+
+
+def seed_tool_level_guard(run_total_paise: int, seen_keys: set[tuple[str, str]]) -> None:
+    """Restore the guard from a resumed run's checkpoint: `run_total_paise` is
+    what that run already spent, `seen_keys` the (record_id, tool_name) pairs
+    it already executed. Replaces (does not add to) the current state."""
+    global _tool_run_total_paise
+    _tool_seen.clear()
+    _tool_seen.update(seen_keys)
+    _tool_run_total_paise = run_total_paise
+
+
+def tool_level_guard_state() -> tuple[int, frozenset[tuple[str, str]]]:
+    """Read-only snapshot (run total, seen keys) - for tests and diagnostics."""
+    return _tool_run_total_paise, frozenset(_tool_seen)
+
+
+def _reset_tool_level_guard_for_tests() -> None:
+    """Kept for existing tests; same as reset_tool_level_guard()."""
+    reset_tool_level_guard()
 
 
 @server.tool()
@@ -109,7 +153,7 @@ def list_halted_subscriptions() -> list[dict]:
 async def create_payment_link(subscription_id: str, amount_paise: int, description: str) -> dict:
     """Create a Razorpay payment link to nudge a customer to fix payment."""
     _enforce_tool_level_cap(subscription_id, "create_payment_link", amount_paise)
-    if simulate_mode():
+    if SIMULATE:
         return _rp.create_payment_link(amount_paise, description, subscription_id)
     result = await call_official_tool(
         "create_payment_link",
@@ -117,7 +161,7 @@ async def create_payment_link(subscription_id: str, amount_paise: int, descripti
             "amount": amount_paise,
             "currency": "INR",
             "description": description,
-            "notes": {"subscription_id": subscription_id, "source": "failsafe-agent"},
+            "notes": {"subscription_id": subscription_id, "source": "recovery-agent"},
         },
     )
     result["simulated"] = False
@@ -129,14 +173,14 @@ async def create_payment_link(subscription_id: str, amount_paise: int, descripti
 async def create_retry_order(subscription_id: str, amount_paise: int) -> dict:
     """Create a Razorpay order representing a retry attempt."""
     _enforce_tool_level_cap(subscription_id, "create_retry_order", amount_paise)
-    if simulate_mode():
+    if SIMULATE:
         return _rp.create_retry_order(amount_paise, subscription_id)
     result = await call_official_tool(
         "create_order",
         {
             "amount": amount_paise,
             "currency": "INR",
-            "notes": {"subscription_id": subscription_id, "source": "failsafe-agent"},
+            "notes": {"subscription_id": subscription_id, "source": "recovery-agent"},
         },
     )
     result["simulated"] = False

@@ -23,7 +23,7 @@ audit trail for who changed what and when.
 Theme: Razorpay-brand navy/blue dark console, the same palette and panel
 language as generate_report.py so both pages read as one product on camera.
 
-Usage: python generate_policy_dashboard.py
+Usage: python -m failsafe.generate_policy_dashboard
 """
 
 import html
@@ -165,7 +165,7 @@ def build_dashboard():
     )
 
     page_html = f"""<!doctype html>
-<html><head><meta charset="utf-8"><title>FailSafe Policy - Merchant View</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>FailSafe - Recovery Policy - Merchant View</title>
 <style>
   * {{ box-sizing:border-box; }}
   ::selection {{ background:#2B84EB; color:#FFFFFF; }}
@@ -263,7 +263,7 @@ def build_dashboard():
 <div class="page">
 <div class="brand">
   <div class="logo">₹</div>
-  <h1>Fail<span class="accent">Safe</span> Policy — Merchant View</h1>
+  <h1>Fail<span class="accent">Safe</span> Recovery Policy — Merchant View</h1>
   <span class="badge">Read-only by design</span>
 </div>
 <div class="sub">Generated directly from <code>config/decline_policy.json</code> — the exact live policy the gate
@@ -293,7 +293,7 @@ enforces, not a mockup or a separate copy. Read-only by design; see the note at 
 <div class="controls">
   <div class="filter-group">
     <span class="label">Search</span>
-    <input id="search" placeholder="Search code or description...">
+    <input id="search" placeholder="Search code or description..." aria-label="Search decline codes">
   </div>
   <div class="filter-group">
     <span class="label">Source</span>

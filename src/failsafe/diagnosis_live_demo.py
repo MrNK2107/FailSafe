@@ -44,32 +44,41 @@ against real test-mode keys already exist elsewhere in this project
 (REAL_MCP_RESULTS.md); duplicating that here would add cost/objects with
 no bearing on what this script measures.
 
-Historical note, kept as a warning: forcing simulate used to require
-patching TWO things (`mcp_server.SIMULATE` plus `mcp_server._rp.simulate`)
-because _rp's simulate state was a snapshot bound at construction - patch
-only the first and _rp still made a REAL API call, which once burned a
-real "test mode limit of 30 reached for payment_link" ServerError. The
-WP3 import-hygiene overhaul removed the shadow copies entirely: simulate
-state now lives in ONE dynamic knob (failsafe.razorpay_client.simulate_mode)
-and callers force it with force_simulate(). The failure mode above is
-structurally impossible now - there is no second copy left to drift.
+Patches `mcp_server._rp.simulate` directly, NOT just `mcp_server.SIMULATE`
+- found the hard way, mid-development of this script, that patching only
+the module-level `SIMULATE` name is insufficient: `_rp = RazorpayClient()`
+is constructed once at mcp_server.py IMPORT time, and its `create_payment_link`/
+`create_retry_order` methods branch on `self.simulate` (bound at that
+construction, from whatever `.env` keys were present then), not on the
+module-level name. With real `rzp_test_` keys in `.env` (as this project's
+own does), patching only `mcp_server.SIMULATE` still routed calls into
+`_rp.create_payment_link(...)` (mcp_server.py's own top-level branch
+correctly saw the patched value) but `_rp` itself then made a REAL API
+call, because its own `self.simulate` was never patched - confirmed
+directly: a first live run of this script under that bug hit a real
+"test mode limit of 30 reached for payment_link" ServerError. This is a
+pre-existing gap in this project's own SIMULATE-patching convention
+(tests/test_idempotency_integration.py patches the same, narrower target)
+that this script's development surfaced but does not fix elsewhere -
+noted here and in BUILD_LOG.md §14 rather than silently worked around.
 
-Usage: python diagnosis_live_demo.py [N]   (default N=30)
+Usage: python -m failsafe.diagnosis_live_demo [N]   (default N=30)
 """
 
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 from mcp import Client
 
+from failsafe import mcp_server
 from failsafe.audit_log import AuditLogger
 from failsafe.decline_codes import RecoveryAction, get_decline_code
 from failsafe.gate import Gate
 from failsafe.mcp_server import server as mcp_server_instance
 from failsafe.ollama_client import DEFAULT_SITUATION
 from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
-from failsafe.razorpay_client import force_simulate
 from failsafe.recovery_pipeline import process_record
 
 DATA_PATH = DATA_DIR / "halted_subscriptions.json"
@@ -100,7 +109,7 @@ async def run(n: int) -> list[dict]:
 
     gate = Gate()
     results = []
-    with force_simulate():
+    with mcp_server.simulate_mode(True):
         async with Client(mcp_server_instance) as client:
             for i, sub in enumerate(records):
                 result = await process_record(
@@ -131,6 +140,12 @@ async def run(n: int) -> list[dict]:
 
 def write_results(results: list[dict]):
     total = len(results)
+    if not total:  # n=0 or an empty data file: nothing to score, don't divide by zero
+        RESULTS_PATH.write_text(
+            "# DIAGNOSIS_DEMO_RESULTS\n\nNo records processed.\n", encoding="utf-8"
+        )
+        print(f"\nWrote {RESULTS_PATH} (empty run)")
+        return
     matched = sum(1 for r in results if r["diagnosis_matched_ground_truth"])
     mismatched = total - matched
     failed = sum(1 for r in results if r["diagnosed_decline_code"] is None)

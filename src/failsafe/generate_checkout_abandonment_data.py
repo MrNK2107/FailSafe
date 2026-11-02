@@ -49,6 +49,7 @@ is a structural guarantee, not a hope.
 import json
 import random
 import uuid
+from pathlib import Path
 
 from failsafe.checkout_abandonment_policy import ABANDONMENT_POLICIES
 from failsafe.paths import DATA_DIR
@@ -210,7 +211,7 @@ def main():
     OUTPUT_PATH.write_text(json.dumps(records, indent=2), encoding="utf-8")
     print(f"Wrote {len(records)} synthetic checkout-abandonment records to {OUTPUT_PATH}")
 
-    by_reason = {}
+    by_reason: dict[str, int] = {}
     for r in records:
         by_reason[r["abandonment_reason"]] = by_reason.get(r["abandonment_reason"], 0) + 1
     for reason, count in sorted(by_reason.items()):

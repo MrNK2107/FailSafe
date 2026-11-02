@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FailSafe Hero Banner</title>
+<!-- Source of docs/screenshots/hero.png. Render at 1280x560:
+     chrome --headless=new --window-size=1280,560 --screenshot=docs/screenshots/hero.png docs/brand/hero.html
+     Numbers are from the committed logs (TRACE.html / python -m failsafe.replay); update them if the logs change. -->
+<style>
+  :root { --ink:#0D1321; --ink2:#1B2333; --paper:#F5F4EE; --go:#34D399; --warn:#FBBF24; --llm:#A78BFA; --human:#7AA2F7; --muted:#9AA4B5;
+          --mono: ui-monospace, "JetBrains Mono", Consolas, monospace; --sans: "Inter", ui-sans-serif, "Segoe UI", sans-serif; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; }
+  body { width:1280px; height:560px; background:var(--ink); color:var(--paper); font-family:var(--sans); overflow:hidden; position:relative; }
+  .grid { position:absolute; inset:0; background-image:linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size:32px 32px; }
+  .wrap { position:relative; padding:58px 64px; display:grid; grid-template-columns:520px 1fr; gap:48px; height:100%; }
+  .brand { display:flex; align-items:center; gap:14px; font-size:30px; font-weight:750; letter-spacing:-.02em; }
+  h1 { font-size:46px; line-height:1.08; letter-spacing:-.03em; margin:34px 0 16px; font-weight:750; }
+  h1 em { font-style:normal; color:var(--go); }
+  p.lede { color:#C6CCD8; font-size:17px; line-height:1.55; margin:0 0 30px; max-width:470px; }
+  .stats { display:grid; grid-template-columns:repeat(3, auto); gap:28px; justify-content:start; }
+  .stat .n { font-size:30px; font-weight:750; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .stat .l { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; margin-top:2px; }
+  .flow { align-self:center; display:grid; gap:10px; font-family:var(--mono); font-size:13.5px; }
+  .step { display:grid; grid-template-columns:118px 1fr auto; align-items:center; gap:14px; background:var(--ink2); border:1px solid #2A3446; border-radius:12px; padding:12px 16px; }
+  .step .k { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.1em; font-family:var(--sans); font-weight:650; }
+  .step .v { color:var(--paper); }
+  .tag { font-size:11.5px; padding:3px 9px; border-radius:99px; font-weight:650; }
+  .t-llm { background:#2A2150; color:var(--llm); } .t-go { background:#0F3A2C; color:var(--go); } .t-warn { background:#3A2C0F; color:var(--warn); } .t-human { background:#16264A; color:var(--human); }
+  .gate { border-color:var(--go); box-shadow:0 0 0 3px #34D39922; }
+  .checks { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .checks span { font-size:11px; color:#C6CCD8; border:1px solid #2F3A4E; border-radius:6px; padding:2px 7px; }
+  .checks span.d { border-color:var(--warn); color:var(--warn); }
+</style>
+</head>
+<body>
+<div class="grid"></div>
+<div class="wrap">
+  <div>
+    <div class="brand">
+      <svg width="44" height="44" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#F5F4EE"/><path d="M9 7v18M23 7v18" stroke="#0D1321" stroke-width="3" stroke-linecap="round"/><path d="M5 16h7l3-4 3 8 3-4h6" fill="none" stroke="#0B8F63" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      FailSafe
+    </div>
+    <h1>The LLM proposes.<br>The gate decides.<br><em>Every decision replays.</em></h1>
+    <p class="lede">Revenue recovery for Razorpay payments that the built-in retries gave up on, with a deterministic safety gate between the model and the money, and an audit trail you can re-run.</p>
+    <div class="stats">
+      <div class="stat"><div class="n">326/326</div><div class="l">decisions replay exactly</div></div>
+      <div class="stat"><div class="n">6</div><div class="l">gate checks per payment</div></div>
+      <div class="stat"><div class="n">$0</div><div class="l">to run: local LLM</div></div>
+    </div>
+  </div>
+  <div class="flow" aria-label="Pipeline">
+    <div class="step"><span class="k">Signal</span><span class="v">"Issuer response: card blocked."</span><span class="tag t-human">halted sub</span></div>
+    <div class="step"><span class="k">Diagnose</span><span class="v">debit_instrument_blocked</span><span class="tag t-llm">LLM</span></div>
+    <div class="step"><span class="k">Propose</span><span class="v">payment_link_nudge</span><span class="tag t-llm">LLM</span></div>
+    <div class="step gate"><span class="k">Gate</span><span class="v">no_action_unrecoverable
+      <div class="checks"><span>policy &#8635;</span><span class="d">no-action</span><span>attempts</span><span>staleness</span><span>spend cap</span><span>idempotency</span></div></span><span class="tag t-warn">override</span></div>
+    <div class="step"><span class="k">Execute</span><span class="v">flag_for_manual_review</span><span class="tag t-go">MCP</span></div>
+    <div class="step"><span class="k">Replay</span><span class="v">same inputs &rarr; same decision</span><span class="tag t-go">reproduced</span></div>
+  </div>
+</div>
+</body>
+</html>

@@ -25,3 +25,11 @@ DETECTION_DEMO_RESULTS.md
 
 # Runtime logs at the repo root (audit evidence under logs/ IS committed)
 *.log
+.coverage
+*.egg-info/
+.pytest_cache/
+.benchmarks/
+htmlcov/
+.env.*
+!.env.example
+coverage.xml

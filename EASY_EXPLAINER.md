@@ -1,4 +1,4 @@
-# EASY_EXPLAINER — what this project does, in plain language
+# EASY_EXPLAINER — what FailSafe does, in plain language
 
 ## The problem
 
@@ -61,6 +61,22 @@ refuses to run against a live key, by construction.
 | A B2B company | chases overdue invoices (politely, and stops at 4 reminders) |
 
 Run all four at once with `python -m failsafe integrated`.
+
+## And if you change the rules?
+
+Every decision the robot ever made is in the audit log, with the inputs the
+gate saw. FailSafe can **replay** them: run every past decision through the gate
+again. With today's rules, all 326 recorded subscription decisions come out
+exactly the same (that is checked on every change). With a *proposed* rule
+change, replay shows which customers would have been treated differently and
+how much money that moves, before the change goes live:
+
+```bash
+python -m failsafe replay --policy examples/policy_whatif_retry_low_balance.json
+```
+
+`python -m failsafe console` serves the same thing as web pages: a per-customer
+decision trace, the report, the policy, and a what-if editor.
 
 ## Cost
 

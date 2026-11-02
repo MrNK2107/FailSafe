@@ -57,3 +57,26 @@ Plain-language definitions of the terms used across this codebase.
   image, used as the executor when real test keys are configured.
 - **Ollama** — local LLM runtime. The project's only model dependency; no
   paid APIs anywhere.
+
+## Replay, trace and console
+
+- **`python -m failsafe <command>`** — the one entry point; arguments after
+  the command go to that module's own CLI.
+- **Replay** (`failsafe/replay.py`) — re-runs every recorded `gate_decision`
+  through the real gate. Under the committed policy it must reproduce every
+  decision exactly (determinism check, enforced in CI).
+- **What-if** — replay under a *candidate* policy (`--policy FILE`): which
+  decisions would flip, which actions get re-timed, and how much money moves
+  into or out of automated collection — before the policy ships.
+- **Deciding check** — the first of the gate's ordered checks (`GATE_CHECKS`
+  in `failsafe/gate.py`) that determined the final action. Shown per record
+  in the decision trace and used by replay to explain a flip.
+- **Decision trace** (`failsafe/decision_trace.py` → `TRACE.html`) — one
+  timeline per record: raw signal, diagnosis, LLM proposal, each gate check
+  (pass / override / decided / not reached), MCP call, replay badge.
+- **Console** (`failsafe/console.py`) — read-only stdlib web server for the
+  trace, report, policy view, replay API and the what-if policy editor.
+  Never writes the policy; the editor returns a candidate file and PR text.
+- **Policy check** (`.github/workflows/policy-check.yml`) — CI job that
+  replays the committed logs under the base branch's policy and posts the
+  what-if of the PR's policy as the job summary.

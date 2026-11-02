@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-import failsafe.detect as detect
+from failsafe import detect
 
 
 def _fake_response(json_body: dict):

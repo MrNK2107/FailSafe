@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FailSafe Decision Trace</title>
+<meta name="description" content="Every payment FailSafe touched: signal, diagnosis, LLM proposal, each gate check, the tool call, and a deterministic replay verdict.">
+<style>
+  :root {
+    --ink:#0D1321; --ink-2:#1B2333; --paper:#F5F4EE; --card:#FFFFFF; --line:#E4E2D8; --line-2:#EFEDE5;
+    --text:#1C2433; --muted:#5E6878; --faint:#6B7585;
+    --go:#0B8F63; --go-bg:#E3F5EC; --warn:#B45309; --warn-bg:#FCF0DC; --stop:#C2410C; --stop-bg:#FDE7DF;
+    --bad:#B42318; --bad-bg:#FDE8E6; --llm:#5B3FD0; --llm-bg:#EEEAFD; --human:#1D5BD8; --human-bg:#E5EDFD;
+    --focus:#0B8F63;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
+    --sans: "Inter", ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#0B0F17; --card:#121826; --line:#232B3B; --line-2:#1A2130; --text:#E6E8EE; --muted:#A3ADBD; --faint:#8A95A8;
+      --go:#34D399; --go-bg:#0E2A22; --warn:#FBBF24; --warn-bg:#2B2212; --stop:#FB923C; --stop-bg:#2D1A10;
+      --bad:#F87171; --bad-bg:#2E1414; --llm:#A78BFA; --llm-bg:#1E1838; --human:#7AA2F7; --human-bg:#121E38;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#0B0F17; --card:#121826; --line:#232B3B; --line-2:#1A2130; --text:#E6E8EE; --muted:#A3ADBD; --faint:#8A95A8;
+    --go:#34D399; --go-bg:#0E2A22; --warn:#FBBF24; --warn-bg:#2B2212; --stop:#FB923C; --stop-bg:#2D1A10;
+    --bad:#F87171; --bad-bg:#2E1414; --llm:#A78BFA; --llm-bg:#1E1838; --human:#7AA2F7; --human-bg:#121E38;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; }
+  body { font:14px/1.55 var(--sans); background:var(--paper); color:var(--text); -webkit-font-smoothing:antialiased; }
+  a { color:inherit; }
+  .top { background:var(--ink); color:#F5F4EE; padding:18px 28px 20px; }
+  .top-in { max-width:1320px; margin:0 auto; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; letter-spacing:-.01em; }
+  .brand small { font-weight:500; color:#9AA4B5; font-size:13px; letter-spacing:0; margin-left:4px; }
+  .src { margin-left:auto; font:12px var(--mono); color:#9AA4B5; text-align:right; }
+  .src b { color:#F5F4EE; font-weight:500; }
+  .wrap { max-width:1320px; margin:0 auto; padding:22px 28px 40px; }
+  .stats { display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:20px; }
+  .stat { background:var(--card); padding:14px 18px; }
+  .stat .n { font-size:24px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .stat .l { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.07em; margin-top:2px; }
+  .stat.go .n { color:var(--go); } .stat.llm .n { color:var(--llm); } .stat.human .n { color:var(--human); } .stat.bad .n { color:var(--bad); }
+  .main { display:grid; grid-template-columns:380px minmax(0,1fr); gap:20px; align-items:start; }
+  .rail { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; position:sticky; top:16px; }
+  .controls { padding:14px; border-bottom:1px solid var(--line); display:grid; gap:10px; }
+  .row { display:flex; gap:8px; }
+  input[type=search], select { width:100%; font:13px var(--sans); color:var(--text); background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  input[type=search]:focus, select:focus, button:focus-visible, .item:focus-visible { outline:2px solid var(--focus); outline-offset:1px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { font:12px var(--sans); font-weight:600; border:1px solid var(--line); background:var(--card); color:var(--muted); border-radius:99px; padding:4px 10px; cursor:pointer; }
+  .chip[aria-pressed=true] { background:var(--ink); color:#F5F4EE; border-color:var(--ink); }
+  :root[data-theme="dark"] .chip[aria-pressed=true] { background:#F5F4EE; color:#0D1321; }
+  .count { color:var(--muted); font-size:12px; }
+  .list { position:relative; max-height:calc(100vh - 270px); min-height:300px; overflow:auto; }
+  .item { display:grid; grid-template-columns:10px minmax(0,1fr) auto; gap:10px; align-items:center; padding:9px 14px; border-bottom:1px solid var(--line-2); cursor:pointer; }
+  .item:hover { background:var(--paper); }
+  .item[aria-selected=true] { background:var(--paper); box-shadow:inset 3px 0 0 var(--ink); }
+  :root[data-theme="dark"] .item[aria-selected=true] { box-shadow:inset 3px 0 0 #F5F4EE; }
+  .dot { width:8px; height:8px; border-radius:50%; }
+  .rid { font:12.5px var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .code { color:var(--muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pill { font:11px var(--mono); font-weight:600; padding:2px 8px; border-radius:99px; white-space:nowrap; }
+  .v-executed { background:var(--go-bg); color:var(--go); } .d-executed { background:var(--go); }
+  .v-escalated { background:var(--human-bg); color:var(--human); } .d-escalated { background:var(--human); }
+  .v-blocked { background:var(--bad-bg); color:var(--bad); } .d-blocked { background:var(--bad); }
+  .v-review { background:var(--warn-bg); color:var(--warn); } .d-review { background:var(--warn); }
+  .detail { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:22px 26px 26px; min-height:400px; }
+  .dh { display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; border-bottom:1px solid var(--line); padding-bottom:16px; margin-bottom:18px; }
+  .dh h2 { margin:0; font:600 19px var(--mono); letter-spacing:-.01em; }
+  .dh .meta { color:var(--muted); font-size:13px; margin-top:3px; }
+  .dh .right { margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .badge { font-size:12px; font-weight:600; padding:4px 10px; border-radius:8px; border:1px solid var(--line); }
+  .b-repro { color:var(--go); border-color:currentColor; } .b-changed { color:var(--bad); border-color:currentColor; } .b-na { color:var(--faint); }
+  .tl { list-style:none; margin:0; padding:0; position:relative; }
+  .tl > li { position:relative; padding:0 0 18px 30px; }
+  .tl > li::before { content:""; position:absolute; left:8px; top:20px; bottom:0; width:2px; background:var(--line); }
+  .tl > li:last-child::before { display:none; }
+  .node { position:absolute; left:2px; top:5px; width:14px; height:14px; border-radius:50%; border:3px solid var(--card); box-shadow:0 0 0 1.5px var(--faint); background:var(--faint); }
+  .t-ok .node { background:var(--go); box-shadow:0 0 0 1.5px var(--go); }
+  .t-warn .node { background:var(--warn); box-shadow:0 0 0 1.5px var(--warn); }
+  .t-bad .node { background:var(--bad); box-shadow:0 0 0 1.5px var(--bad); }
+  .st { font-weight:650; font-size:13.5px; display:flex; gap:10px; align-items:baseline; }
+  .st .ts { color:var(--faint); font:11px var(--mono); font-weight:400; }
+  .ln { color:var(--muted); font-size:13px; margin-top:2px; }
+  .signal { font:12.5px var(--mono); background:var(--paper); border:1px dashed var(--line); border-radius:8px; padding:8px 10px; margin-top:6px; color:var(--text); }
+  .prop { margin-top:8px; border-radius:10px; background:var(--llm-bg); padding:10px 12px; }
+  .prop .k { color:var(--llm); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; }
+  .prop .a { font:600 13px var(--mono); color:var(--llm); }
+  .prop .r { color:var(--text); font-size:13px; margin-top:2px; opacity:.9; }
+  .checks { margin:10px 0 0; padding:0; list-style:none; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .checks li { display:grid; grid-template-columns:22px minmax(0,1fr) auto; gap:8px; align-items:center; padding:7px 12px; border-bottom:1px solid var(--line-2); font-size:13px; }
+  .checks li:last-child { border-bottom:none; }
+  .checks .ic { font:700 12px var(--mono); text-align:center; }
+  .c-pass .ic { color:var(--go); } .c-override .ic, .c-override .cs { color:var(--warn); }
+  .c-decided { background:var(--stop-bg); } .c-decided .ic, .c-decided .cs { color:var(--stop); font-weight:700; }
+  .c-skipped { color:var(--faint); }
+  .checks .cs { font:11px var(--mono); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .checks .cd { color:var(--muted); font:11.5px var(--mono); margin-left:6px; }
+  .final { margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:13px; }
+  .final .why { color:var(--muted); }
+  .kv { margin-top:6px; font:12px var(--mono); color:var(--muted); background:var(--paper); border-radius:8px; padding:8px 10px; overflow-wrap:anywhere; }
+  .empty { color:var(--muted); padding:40px 0; text-align:center; }
+  .foot { color:var(--faint); font-size:12px; margin-top:22px; }
+  .whatif { display:none; margin:-6px 0 18px; padding:12px 16px; border-radius:10px; background:var(--warn-bg); color:var(--text); border:1px solid var(--line); font-size:13.5px; }
+  .whatif b { color:var(--warn); }
+  .whatif button { margin-left:8px; }
+  .rbox { margin-top:12px; border:1.5px dashed var(--bad); border-radius:10px; padding:10px 12px; font-size:13px; }
+  .rbox .k { color:var(--bad); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; }
+  .foot code { font-family:var(--mono); }
+  kbd { font:11px var(--mono); border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 4px; }
+  .nav { display:flex; gap:4px; margin-left:8px; }
+  .nav a { color:#C8CFDB; text-decoration:none; font-size:13px; padding:5px 10px; border-radius:8px; }
+  .nav a:hover, .nav a:focus-visible { background:#1B2333; color:#F5F4EE; outline:none; }
+  .theme { background:transparent; border:1px solid #2C3647; color:#C8CFDB; border-radius:8px; padding:5px 9px; font:12px var(--sans); cursor:pointer; }
+  @media (max-width: 960px) {
+    .stats { grid-template-columns:repeat(3, minmax(0,1fr)); }
+    .main { grid-template-columns:minmax(0,1fr); }
+    .rail { position:static; }
+    .list { max-height:360px; }
+    .src { margin-left:0; text-align:left; }
+  }
+  @media (max-width: 560px) {
+    .top, .wrap { padding-left:16px; padding-right:16px; }
+    .stats { grid-template-columns:repeat(2, minmax(0,1fr)); }
+    .detail { padding:16px; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#F5F4EE"/><path d="M9 7v18M23 7v18" stroke="#0D1321" stroke-width="3" stroke-linecap="round"/><path d="M5 16h7l3-4 3 8 3-4h6" fill="none" stroke="#0B8F63" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      FailSafe <small>Decision Trace</small>
+    </div>
+    <nav class="nav" aria-label="FailSafe pages"><a href="REPORT.html">Audit report</a><a href="POLICY_DASHBOARD.html">Policy</a><a href="/policy/edit" id="editor-link" hidden>What-if editor</a></nav>
+    <button class="theme" id="theme" type="button" aria-label="Toggle dark mode">Theme</button>
+    <div class="src">audit log <b>{{SOURCE}}</b><br>replayed under <b>{{POLICY}}</b></div>
+  </div>
+</header>
+<main class="wrap">
+  <section class="stats" id="stats" aria-label="Summary"></section>
+  <div class="whatif" id="whatif" role="note"></div>
+  <div class="main">
+    <aside class="rail" aria-label="Records">
+      <div class="controls">
+        <input type="search" id="q" placeholder="Search record id or decline code" aria-label="Search records">
+        <div class="row">
+          <select id="view" aria-label="Which decisions to list">
+            <option value="latest">Latest per record</option>
+            <option value="all">Every run</option>
+          </select>
+          <select id="code" aria-label="Filter by decline code"><option value="">All codes</option></select>
+        </div>
+        <div class="chips" id="chips" role="group" aria-label="Filter by outcome"></div>
+        <div class="count" id="count" aria-live="polite"></div>
+      </div>
+      <div class="list" id="list" role="listbox" aria-label="Decisions" tabindex="0"></div>
+    </aside>
+    <section class="detail" id="detail" aria-live="polite"></section>
+  </div>
+  <p class="foot">Static page generated by <code>python -m failsafe.decision_trace</code>. The LLM only proposes; the deterministic gate decides. "Replay" re-runs the gate on the recorded inputs; the LLM is not called again. Keys: <kbd>j</kbd>/<kbd>k</kbd> move, <kbd>/</kbd> search.</p>
+</main>
+<script type="application/json" id="data">{{DATA}}</script>
+<script>
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("data").textContent);
+  var T = D.traces;
+  T.forEach(function (t, i) { t._i = i; });
+  var state = { q: "", view: "latest", code: "", chip: "all", sel: null };
+
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      if (k === "text") el.textContent = attrs[k];
+      else if (k === "cls") el.className = attrs[k];
+      else el.setAttribute(k, attrs[k]);
+    });
+    (kids || []).forEach(function (c) { if (c != null) el.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return el;
+  }
+  function inr(p) { return p == null ? "" : "INR " + (p / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  var MONEY = { immediate_retry: 1, delayed_retry: 1, payment_link_nudge: 1 };
+  var VERDICT = { executed: "collecting", escalated: "to a human", blocked: "blocked", review: "needs review" };
+  var CHIPS = [
+    ["all", "All"], ["executed", "Collecting"], ["escalated", "Escalated"], ["blocked", "Blocked"],
+    ["overridden", "LLM overridden"], ["changed", "Replay differs"]
+  ];
+
+  // stats
+  var S = D.stats;
+  [["n", S.records, "records", ""], ["n", S.executed, "sent to collection", "go"], ["n", S.escalated, "escalated to a human", "human"],
+   ["n", S.overridden, "LLM overridden", "llm"], ["n", S.blocked + S.review, "blocked / review", "bad"],
+   ["n", S.reproduced + "/" + S.replayed, "replay reproduces", S.reproduced === S.replayed ? "go" : "bad"]].forEach(function (s) {
+    document.getElementById("stats").appendChild(h("div", { cls: "stat " + s[3] }, [h("div", { cls: "n", text: String(s[1]) }), h("div", { cls: "l", text: s[2] })]));
+  });
+
+  var codes = {};
+  T.forEach(function (t) { if (t.code) codes[t.code] = 1; });
+  var codeSel = document.getElementById("code");
+  Object.keys(codes).sort().forEach(function (c) { codeSel.appendChild(h("option", { value: c, text: c })); });
+
+  var chips = document.getElementById("chips");
+  CHIPS.forEach(function (c) {
+    var b = h("button", { cls: "chip", type: "button", "aria-pressed": c[0] === state.chip ? "true" : "false", "data-chip": c[0], text: c[1] });
+    b.addEventListener("click", function () { state.chip = c[0]; render(); });
+    chips.appendChild(b);
+  });
+
+  function latest() {
+    var last = {};
+    T.forEach(function (t) { last[t.record_id] = t; });
+    return T.filter(function (t) { return last[t.record_id] === t; });
+  }
+  function visible() {
+    var base = state.view === "latest" ? latest() : T.slice();
+    var q = state.q.toLowerCase();
+    return base.filter(function (t) {
+      if (state.code && t.code !== state.code) return false;
+      if (q && (t.record_id + " " + (t.code || "") + " " + (t.final || "")).toLowerCase().indexOf(q) < 0) return false;
+      if (state.chip === "overridden") return t.overridden;
+      if (state.chip === "changed") return t.replay.status === "changed";
+      if (state.chip !== "all") return t.verdict === state.chip;
+      return true;
+    });
+  }
+
+  function render() {
+    Array.prototype.forEach.call(chips.children, function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-chip") === state.chip ? "true" : "false"); });
+    var rows = visible();
+    var list = document.getElementById("list");
+    list.textContent = "";
+    document.getElementById("count").textContent = rows.length + " of " + (state.view === "latest" ? latest().length + " records" : T.length + " decisions");
+    if (!rows.some(function (t) { return t._i === state.sel; })) state.sel = rows.length ? rows[0]._i : null;
+    rows.forEach(function (t) {
+      var it = h("div", { cls: "item", role: "option", tabindex: "-1", "aria-selected": t._i === state.sel ? "true" : "false", "data-i": String(t._i) }, [
+        h("span", { cls: "dot d-" + t.verdict, "aria-hidden": "true" }),
+        h("div", {}, [h("div", { cls: "rid", text: t.record_id }), h("div", { cls: "code", text: (t.code || "no code") + (state.view === "all" ? "  - run " + (t.run + 1) : "") })]),
+        h("span", { cls: "pill v-" + t.verdict, text: t.final || VERDICT[t.verdict] })
+      ]);
+      it.addEventListener("click", function () { select(t._i); });
+      list.appendChild(it);
+    });
+    detail(state.sel == null ? null : T[state.sel]);
+  }
+
+  function select(i) {
+    state.sel = i;
+    try { history.replaceState(null, "", "#" + encodeURIComponent(T[i].record_id) + (state.view === "all" ? "@" + T[i].run : "")); } catch (e) {}
+    render();
+    var el = document.querySelector('.item[data-i="' + i + '"]');
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+  }
+
+  function detail(t) {
+    var d = document.getElementById("detail");
+    d.textContent = "";
+    if (!t) { d.appendChild(h("div", { cls: "empty", text: "No decisions match these filters." })); return; }
+    var rp = t.replay || { status: "n/a" };
+    var rpLabel = rp.status === "reproduced" ? "Replay: reproduced" : rp.status === "changed" ? "Replay: differs (" + rp.action + ")" : "Replay: n/a";
+    d.appendChild(h("div", { cls: "dh" }, [
+      h("div", {}, [h("h2", { text: t.record_id }), h("div", { cls: "meta", text: [t.code, inr(t.amount_paise), "run " + (t.run + 1) + " of " + D.stats.runs].filter(Boolean).join("  ·  ") })]),
+      h("div", { cls: "right" }, [
+        h("span", { cls: "pill v-" + t.verdict, text: VERDICT[t.verdict] }),
+        h("span", { cls: "badge " + (rp.status === "reproduced" ? "b-repro" : rp.status === "changed" ? "b-changed" : "b-na"), title: rp.reason || "", text: rpLabel })
+      ])
+    ]));
+    var tl = h("ol", { cls: "tl" });
+    var lastGate = null;
+    t.steps.forEach(function (s) { if (s.type === "gate_decision") lastGate = s; });
+    t.steps.forEach(function (s) {
+      var li = h("li", { cls: "t-" + s.tone }, [h("span", { cls: "node", "aria-hidden": "true" }), h("div", { cls: "st" }, [s.title, h("span", { cls: "ts", text: (s.ts || "").replace("T", " ").slice(0, 19) })])]);
+      if (s.signal) li.appendChild(h("div", { cls: "signal", text: "“" + s.signal + "”" }));
+      (s.lines || []).forEach(function (l) { li.appendChild(h("div", { cls: "ln", text: l })); });
+      if (s.proposal) {
+        li.appendChild(h("div", { cls: "prop" }, [h("div", { cls: "k", text: "LLM proposes" }), h("div", { cls: "a", text: s.proposal.action || "(nothing usable)" }), s.proposal.reasoning ? h("div", { cls: "r", text: s.proposal.reasoning }) : null]));
+        var ul = h("ul", { cls: "checks", "aria-label": "Gate checks in evaluation order" });
+        var ICON = { pass: "✓", override: "↻", decided: "■", skipped: "–" };
+        var WORD = { pass: "pass", override: "override", decided: "decided", skipped: "not reached" };
+        s.checks.forEach(function (c) {
+          ul.appendChild(h("li", { cls: "c-" + c.status }, [h("span", { cls: "ic", "aria-hidden": "true", text: ICON[c.status] }), h("span", {}, [c.label, c.detail ? h("span", { cls: "cd", text: c.detail }) : null]), h("span", { cls: "cs", text: WORD[c.status] })]));
+        });
+        li.appendChild(ul);
+        li.appendChild(h("div", { cls: "final" }, [h("span", { cls: "pill " + (!s.execute ? "v-blocked" : MONEY[s.final] ? "v-executed" : "v-escalated"), text: "gate decides " + s.final }), h("span", { cls: "why", text: s.reason })]));
+        if (rp.status === "changed" && s === lastGate) {
+          li.appendChild(h("div", { cls: "rbox" }, [h("div", { cls: "k", text: "Replayed under " + D.policy }), h("div", {}, ["the gate would decide ", h("b", { text: rp.action }), ": " + (rp.reason || "")])]));
+        }
+      }
+      if (s.args && Object.keys(s.args).length) li.appendChild(h("div", { cls: "kv", text: "args " + JSON.stringify(s.args) }));
+      if (s.result && Object.keys(s.result).length) li.appendChild(h("div", { cls: "kv", text: "result " + JSON.stringify(s.result) }));
+      tl.appendChild(li);
+    });
+    d.appendChild(tl);
+  }
+
+  document.getElementById("q").addEventListener("input", function (e) { state.q = e.target.value; render(); });
+  document.getElementById("view").addEventListener("change", function (e) { state.view = e.target.value; render(); });
+  codeSel.addEventListener("change", function (e) { state.code = e.target.value; render(); });
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+    if (e.key === "/") { e.preventDefault(); document.getElementById("q").focus(); return; }
+    if (e.key !== "j" && e.key !== "k") return;
+    var rows = visible(), pos = rows.findIndex(function (t) { return t._i === state.sel; });
+    var next = rows[Math.max(0, Math.min(rows.length - 1, pos + (e.key === "j" ? 1 : -1)))];
+    if (next) select(next._i);
+  });
+  document.getElementById("theme").addEventListener("click", function () {
+    var root = document.documentElement, cur = root.getAttribute("data-theme");
+    var dark = cur ? cur === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    root.setAttribute("data-theme", dark ? "light" : "dark");
+    try { localStorage.setItem("failsafe-theme", root.getAttribute("data-theme")); } catch (e) {}
+  });
+  try { var th = new URLSearchParams(location.search).get("theme") || localStorage.getItem("failsafe-theme"); if (th === "light" || th === "dark") document.documentElement.setAttribute("data-theme", th); } catch (e) {}
+
+  // deep link: #record_id or #record_id@run
+  var hash = decodeURIComponent((location.hash || "").slice(1));
+  if (hash) {
+    var parts = hash.split("@"), hit = null;
+    if (parts[1] != null) { state.view = "all"; document.getElementById("view").value = "all"; }
+    T.forEach(function (t) { if (t.record_id === parts[0] && (parts[1] == null || String(t.run) === parts[1])) hit = t; });
+    if (hit) state.sel = hit._i;
+  }
+  // the what-if editor needs the console server (python -m failsafe.console)
+  if (location.protocol === "http:" || location.protocol === "https:") document.getElementById("editor-link").hidden = false;
+  // ?filter=executed|escalated|blocked|overridden|changed preselects a chip
+  try {
+    var f = new URLSearchParams(location.search).get("filter");
+    if (f && CHIPS.some(function (c) { return c[0] === f; })) state.chip = f;
+  } catch (e) {}
+  var changedN = T.filter(function (t) { return t.replay.status === "changed"; }).length;
+  if (changedN) {
+    var wb = document.getElementById("whatif");
+    wb.style.display = "block";
+    var btn = h("button", { cls: "chip", type: "button", text: "Show them" });
+    btn.addEventListener("click", function () { state.chip = "changed"; render(); });
+    wb.appendChild(h("span", {}, ["What-if: replayed under ", h("b", { text: D.policy }), ", " + changedN + " recorded decisions would change."]));
+    wb.appendChild(btn);
+  }
+  render();
+  // scroll only the list (not the page) to a deep-linked record
+  var selEl = document.querySelector('.item[aria-selected="true"]'), listEl = document.getElementById("list");
+  if (selEl && hash) listEl.scrollTop = Math.max(0, selEl.offsetTop - listEl.clientHeight / 2);
+})();
+</script>
+</body>
+</html>

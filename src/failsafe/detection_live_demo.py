@@ -42,27 +42,30 @@ convention (logs/pre_escalation_rules/, logs/pre_accuracy_fix/, and
 diagnosis_live_demo.py's own separate-file choice all preserve prior runs
 rather than mutate or overwrite them).
 
-SIMULATE is forced True here via failsafe.razorpay_client.force_simulate(),
-the single shared simulate knob (see that module's docstring for why the
-old two-patch approach was replaced).
+SIMULATE is forced True here via `mcp_server.simulate_mode()`, which sets
+BOTH `mcp_server.SIMULATE` and `mcp_server._rp.simulate` - diagnosis_live_demo.py's docstring documents in
+detail why patching only the first is insufficient when real `rzp_test_`
+keys are present in `.env` (mcp_server._rp is constructed once at import
+time and branches on its OWN `self.simulate`, not the module-level name).
 
-Usage: python detection_live_demo.py [N]   (default: however many records
+Usage: python -m failsafe.detection_live_demo [N]   (default: however many records
 generate_detection_pool.py wrote, currently 30)
 """
 
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 from mcp import Client
 
+from failsafe import mcp_server
 from failsafe.audit_log import AuditLogger
 from failsafe.decline_codes import RecoveryAction
 from failsafe.gate import Gate
 from failsafe.mcp_server import server as mcp_server_instance
 from failsafe.ollama_client import DEFAULT_SITUATION
 from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
-from failsafe.razorpay_client import force_simulate
 from failsafe.recovery_pipeline import LEFT_ALONE_BY_DETECTION, process_record
 
 DATA_PATH = DATA_DIR / "detection_pool.json"
@@ -92,7 +95,7 @@ async def run(n: int | None) -> list[dict]:
 
     gate = Gate()
     results = []
-    with force_simulate():
+    with mcp_server.simulate_mode(True):
         async with Client(mcp_server_instance) as client:
             for i, sub in enumerate(records):
                 result = await process_record(
@@ -125,6 +128,12 @@ async def run(n: int | None) -> list[dict]:
 
 def write_results(results: list[dict]):
     total = len(results)
+    if not total:  # n=0 or an empty pool: nothing to score, don't divide by zero
+        RESULTS_PATH.write_text(
+            "# DETECTION_DEMO_RESULTS\n\nNo records processed.\n", encoding="utf-8"
+        )
+        print(f"\nWrote {RESULTS_PATH} (empty run)")
+        return
     matched = sum(1 for r in results if r["detection_matched_ground_truth"])
     failed = sum(1 for r in results if r["detection_classification"] is None)
 

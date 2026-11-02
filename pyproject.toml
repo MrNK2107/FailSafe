@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "failsafe"
-version = "1.0.0"
-description = "FailSafe - gated, audited Razorpay revenue-recovery agent. The LLM proposes; deterministic code decides."
+version = "1.1.0"
+description = "FailSafe - a gated, replayable AI agent that recovers failed Razorpay payments. The LLM proposes; deterministic code decides."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
     "mcp==2.1.1",
@@ -19,27 +19,67 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest==8.3.4",
-    "ruff==0.13.2",
+    "pytest-cov==7.1.0",
+    "pytest-timeout==2.4.0",
+    "pytest-rerunfailures==15.0",
+    "ruff==0.15.15",
+    "mypy==2.1.0",
+    "httpx==0.28.1",
+    "hypothesis==6.140.2",
+    "pydantic>=2.11",
+    "pytest-asyncio==0.24.0",
 ]
 
+# One import path: everything lives in the installable `failsafe` package
+# under src/ and is imported as `failsafe.<module>`. Run entry points as
+# `python -m failsafe <command>` (dispatcher) or `python -m failsafe.<module>`.
 [project.scripts]
 failsafe = "failsafe.__main__:main"
+failsafe-replay = "failsafe.replay:main"
+failsafe-trace = "failsafe.decision_trace:main"
+failsafe-console = "failsafe.console:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+failsafe = ["assets/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
-addopts = "-q"
+asyncio_mode = "auto"
+# src/ on sys.path so tests import the `failsafe` package without an install.
+pythonpath = ["src", "."]
+timeout = 30
+addopts = "-q --reruns 2"
 
 [tool.ruff]
 line-length = 100
+target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B"]
-# E501 (line length) handled by formatter; module docstring policy is
-# enforced culturally, not mechanically - many historical modules carry
-# long narrative docstrings that ruff would flag under pydocstyle rules.
-ignore = ["E501"]
+select = ["E", "F", "W", "I", "UP"]
+# E501: long explanatory strings/comments are intentional in this codebase.
+# UP042: str+Enum classes are serialized by value throughout; StrEnum changes str().
+ignore = ["E501", "UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+# Several modules deliberately re-export names (requests/time/constants/
+# diagnose_*) so tests can patch them at the module they're looked up from.
+"src/failsafe/*.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_return_any = false
+check_untyped_defs = true
+mypy_path = "src"
+
+[tool.coverage.run]
+source = ["failsafe"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true

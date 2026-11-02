@@ -50,34 +50,49 @@ here - the same generic-ID convention recovery_pipeline.py already uses
 for agent_onetime.py's `payment_id` records and
 checkout_abandonment_agent.py's own `cart_id` records, not a new pattern.
 
-SIMULATE is forced True for THIS script's run(), for the same reason
-diagnosis_live_demo.py/detection_live_demo.py/checkout_abandonment_agent.py
-document: this repo's own `.env` has real `rzp_test_` keys configured,
-and the real test-mode account has exhausted its payment-link quota - so
-a fresh domain's live demo must not route through the real official MCP
-server or consume scarce real-account quota for a script whose purpose is
-measuring DIAGNOSIS behavior. Implemented via
-failsafe.razorpay_client.force_simulate(), the single shared knob.
+SIMULATE is forced True for THIS script's run(), for the exact same
+reason, via `mcp_server.simulate_mode()` (which sets both
+`mcp_server.SIMULATE` and the import-time `mcp_server._rp.simulate`;
+run(force_simulate=False) opts out) as diagnosis_live_demo.py/
+detection_live_demo.py/checkout_abandonment_agent.py already needed and
+documented: this repo's own `.env` already has real `rzp_test_` keys
+configured, and this project's own real test-mode account has already
+exhausted its payment-link quota - so a fresh domain's live demo must not
+route through the real official MCP server or consume scarce real-account
+quota for a script whose entire purpose is measuring DIAGNOSIS behavior.
 Direct programmatic use of `process_one()` (e.g. from a test) is
-unaffected and still respects whatever simulate state is active at call
-time.
+unaffected and still respects whatever `.env`/SIMULATE state is active at
+call time.
 """
 
+import argparse
 import asyncio
 import json
+import os
+import tempfile
+from contextlib import nullcontext
+from pathlib import Path
 
 from mcp import Client
 
+from failsafe import mcp_server as _mcp_server_module
 from failsafe.audit_log import AuditLogger
 from failsafe.diagnose_receivable import diagnose_receivable
 from failsafe.mcp_server import server as mcp_server
+from failsafe.mcp_tool_errors import (
+    log_tool_error,
+    render_tool_error_lines,
+    route_tool_error_to_review,
+    tool_call_failed,
+)
+from failsafe.ollama_client import non_negative_int, require_ollama
 from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
-from failsafe.razorpay_client import force_simulate
 from failsafe.receivables_gate import ReceivableGate
 from failsafe.receivables_policy import ReceivableAction, get_receivable_policy
 
 DATA_PATH = DATA_DIR / "overdue_invoices.json"
 AUDIT_PATH = LOGS_DIR / "audit_log_receivables.jsonl"
+CHECKPOINT_PATH = LOGS_DIR / "results_checkpoint_receivables.jsonl"
 RESULTS_PATH = PROJECT_ROOT / "RECEIVABLES_RESULTS.md"
 
 ID_FIELD = "invoice_id"
@@ -95,6 +110,50 @@ NO_ACTION = {
     ReceivableAction.NO_ACTION_STALE_INVOICE_NEEDS_LEGAL_REVIEW,
     ReceivableAction.NO_ACTION_NEEDS_HUMAN_REVIEW,
 }
+
+
+def _load_checkpoint() -> list[dict]:
+    if not CHECKPOINT_PATH.exists():
+        return []
+    results = []
+    with CHECKPOINT_PATH.open(encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                results.append(json.loads(line))
+            except json.JSONDecodeError:
+                print(f"[checkpoint] warning: skipping corrupted line in {CHECKPOINT_PATH}")
+                continue
+    return results
+
+
+def _append_checkpoint(result: dict):
+    CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(result, default=str) + "\n"
+    if not CHECKPOINT_PATH.exists():
+        with CHECKPOINT_PATH.open("w", encoding="utf-8") as f:
+            f.write(line)
+            f.flush()
+            os.fsync(f.fileno())
+        return
+    fd, tmp_path = tempfile.mkstemp(dir=str(CHECKPOINT_PATH.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+            with CHECKPOINT_PATH.open(encoding="utf-8") as src:
+                tmp.write(src.read())
+            tmp.write(line)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp_path, CHECKPOINT_PATH)
+        with CHECKPOINT_PATH.open("a", encoding="utf-8") as f:
+            os.fsync(f.fileno())
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        raise
 
 
 def _valid_case_reason(reason) -> bool:
@@ -205,6 +264,8 @@ async def process_one(
     )
 
     tool_result = None
+    executed = decision.execute
+    tool_error_fields: dict = {}  # set when an MCP tool call errored - see src/failsafe/mcp_tool_errors.py
     if decision.execute and decision.final_action in ACTIONABLE:
         description = ACTION_TO_DESCRIPTION[decision.final_action].format(
             business_name=invoice["business_name"]
@@ -223,6 +284,17 @@ async def process_one(
             result=tool_result,
             invoice_id=invoice_id,
         )
+        if tool_call_failed(call):
+            executed = False
+            review_reason = await route_tool_error_to_review(
+                client,
+                audit,
+                tool="create_payment_link",
+                error=tool_result,
+                record_id=invoice_id,
+                id_kwargs={"invoice_id": invoice_id},
+            )
+            tool_error_fields = {"tool_error": True, "manual_review_reason": review_reason}
     elif decision.final_action in NO_ACTION:
         call = await client.call_tool(
             "flag_for_manual_review", {"subscription_id": invoice_id, "reason": decision.reason}
@@ -234,6 +306,15 @@ async def process_one(
             result=tool_result,
             invoice_id=invoice_id,
         )
+        if tool_call_failed(call):
+            log_tool_error(
+                audit,
+                tool="flag_for_manual_review",
+                error=tool_result,
+                routed_to=None,
+                invoice_id=invoice_id,
+            )
+            tool_error_fields = {"tool_error": True}
 
     return {
         "invoice_id": invoice_id,
@@ -242,15 +323,16 @@ async def process_one(
         "diagnosed_case_reason": diagnosed_case_reason,
         "diagnosis_matched_ground_truth": diagnosis_matched_ground_truth,
         "final_action": decision.final_action.value,
-        "gate_executed": decision.execute,
+        "gate_executed": executed,
         "simulated_customer_response": invoice["simulated_customer_response"],
         "tool_result": tool_result,
+        **tool_error_fields,
     }
 
 
-async def run(n: int | None = None):
+async def run(n: int | None = None, *, force_simulate: bool = True):
     if not DATA_PATH.exists():
-        raise SystemExit("No data found. Run `python generate_receivables_data.py` first.")
+        raise SystemExit("No data found. Run `python -m failsafe.generate_receivables_data` first.")
 
     invoices = json.loads(DATA_PATH.read_text(encoding="utf-8"))
     if n is not None:
@@ -258,12 +340,34 @@ async def run(n: int | None = None):
 
     gate = ReceivableGate()
     audit = AuditLogger(AUDIT_PATH)
-    audit.log("run_started", total_invoices=len(invoices))
-    print(f"Processing {len(invoices)} overdue invoices...")
+    checkpoint_results = _load_checkpoint()
+    done_ids = {r["invoice_id"] for r in checkpoint_results}
+    remaining = [inv for inv in invoices if inv["invoice_id"] not in done_ids]
+    already_spent = sum(
+        r["amount_paise"]
+        for r in checkpoint_results
+        if r["final_action"] in {a.value for a in ACTIONABLE} and r["gate_executed"]
+    )
+    already_seen_keys = {
+        (r["invoice_id"], r["final_action"]) for r in checkpoint_results if r["gate_executed"]
+    }
+    gate.seed_from_checkpoint(already_spent, already_seen_keys)
+    audit.log(
+        "run_started",
+        total_invoices=len(invoices),
+        already_done_from_checkpoint=len(done_ids),
+        remaining=len(remaining),
+    )
+    print(f"{len(done_ids)} already done (checkpoint), {len(remaining)} remaining")
+    print(f"Processing {len(remaining)} overdue invoices...")
 
-    with force_simulate():
+    results = list(checkpoint_results)
+    with _mcp_server_module.simulate_mode(True) if force_simulate else nullcontext():
         async with Client(mcp_server) as client:
-            results = await _process_all(client, gate, audit, invoices)
+            batch = await _process_all(client, gate, audit, remaining)
+            for r in batch:
+                _append_checkpoint(r)
+            results.extend(batch)
 
     audit.log("run_finished", total_processed=len(results))
     write_results(results)
@@ -300,6 +404,13 @@ async def _process_all(
 
 
 def write_results(results: list[dict]):
+    if not results:
+        RESULTS_PATH.write_text(
+            "# RECEIVABLES_RESULTS\n\nNo records processed.\n", encoding="utf-8"
+        )
+        print(f"\nWrote {RESULTS_PATH} (empty run)")
+        return
+
     total = len(results)
     matched = sum(1 for r in results if r["diagnosis_matched_ground_truth"])
     actionable_values = {a.value for a in ACTIONABLE}
@@ -353,6 +464,7 @@ def write_results(results: list[dict]):
         f"- Actions executed (reminders/payment-plan offers/escalations the gate let through): **{len(acted_on)}**",
         f"- Simulated recovered amount: **Rs {recovered_paise / 100:,.2f}** "
         f"({len(recovered)}/{len(acted_on)} executed actions 'succeeded' in simulation)",
+        *render_tool_error_lines(results),
         "",
         "## By final action",
         "",
@@ -381,8 +493,25 @@ def write_results(results: list[dict]):
     print(f"Final-action changed by misdiagnosis: {changed_action}/{total}")
 
 
-if __name__ == "__main__":
-    import sys
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="python -m failsafe.receivables_agent",
+        description="Run the overdue-receivables agent (SIMULATE mode).",
+    )
+    parser.add_argument(
+        "n",
+        nargs="?",
+        type=non_negative_int,
+        default=None,
+        help="process only the first N records (default: all)",
+    )
+    parser.add_argument(
+        "--skip-healthcheck", action="store_true", help="skip the Ollama health check"
+    )
+    args = parser.parse_args(argv)
+    require_ollama(skip=args.skip_healthcheck)
+    asyncio.run(run(args.n))
 
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else None
-    asyncio.run(run(n))
+
+if __name__ == "__main__":
+    main()

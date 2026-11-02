@@ -22,18 +22,19 @@ are commonly present in a local .env.
 import asyncio
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from mcp import Client
 
-import failsafe.mcp_server as mcp_server
+from failsafe import mcp_server
 from failsafe.agent import process_one
 from failsafe.audit_log import AuditLogger
 from failsafe.gate import Gate
-from failsafe.razorpay_client import force_simulate
 
 
 def _run_two_through_one_shared_gate(sub_a: dict, sub_b: dict):
+    mcp_server._reset_tool_level_guard_for_tests()
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
         audit_path = Path(f.name)
     audit = AuditLogger(audit_path)
@@ -64,7 +65,10 @@ def _run_two_through_one_shared_gate(sub_a: dict, sub_b: dict):
         # ran locally with real keys configured - patched here too so this
         # file's own docstring promise ("a test run must never place a
         # real API call as a side effect") is actually true.
-        with force_simulate():
+        with (
+            patch.object(mcp_server, "SIMULATE", True),
+            patch.object(mcp_server._rp, "simulate", True),
+        ):
             first, second = asyncio.run(_run())
         events = audit.read_all()
         return first, second, events

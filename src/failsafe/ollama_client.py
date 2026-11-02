@@ -1,22 +1,20 @@
-"""
-Minimal wrapper around Ollama's local /api/chat endpoint (free, runs on
-your machine, no API key, no bill). The agent uses this ONLY to get the
-model to propose a structured decision - it never lets the model call the
-real Razorpay-facing MCP tools directly. See BUILD_LOG.md §3.1/§5 for why
-that split matters.
-"""
-
-import json
-import os
+import argparse
 import time
 
 import requests
-from dotenv import load_dotenv
 
-load_dotenv()
+from failsafe.llm_client import DEFAULT_SITUATION as _DEFAULT_SITUATION
+from failsafe.llm_client import MAX_RETRIES as _MAX_RETRIES
+from failsafe.llm_client import OLLAMA_HOST as _OLLAMA_HOST
+from failsafe.llm_client import OLLAMA_MODEL as _OLLAMA_MODEL
+from failsafe.llm_client import OllamaToolCaller
+from failsafe.llm_client import propose_action as _llm_propose_action
 
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_HOST = _OLLAMA_HOST
+OLLAMA_MODEL = _OLLAMA_MODEL
+MAX_RETRIES = _MAX_RETRIES
+RETRY_BACKOFF_SECONDS = 3
+DEFAULT_SITUATION = _DEFAULT_SITUATION
 
 DECIDE_ACTION_TOOL = {
     "type": "function",
@@ -39,33 +37,6 @@ DECIDE_ACTION_TOOL = {
                         "no_action_fraud",
                         "no_action_unrecoverable",
                     ],
-                    # Per-value meanings spelled out explicitly. Root-caused a
-                    # real bug from this: without this, the model was reading
-                    # "no_action_fraud" as a generic "no action needed" bucket
-                    # and picking it for cases it explicitly reasoned were NOT
-                    # fraud (e.g. reasoning "not a fraudulent transaction" ->
-                    # action no_action_fraud). See BUILD_LOG.md.
-                    # Rewritten a second time after Run 3 (METRICS.md §2.2):
-                    # the first rewrite (below, superseded) fixed the original
-                    # two biases completely (every one of those codes hit
-                    # 100%) but introduced a new one on 3 codes -
-                    # authentication_failed (source=customer, 6% match),
-                    # card_declined and payment_failed (source=bank, 0% each).
-                    # Root cause, verified against the exact confusion counts:
-                    # (a) the model was treating ANY bank-sourced decline as
-                    # an infra failure under rule 3, even ones with no
-                    # downtime/timeout language at all - a generic "declined
-                    # by the customer's bank" is not the same claim as "bank
-                    # experienced downtime", but the old rule 3 only checked
-                    # decline_source, not whether the description actually
-                    # named an infra problem; (b) authentication_failed
-                    # (source=customer, "Incorrect OTP entry or browser
-                    # closure") was falling through to a generic "customer
-                    # issue, just wait" read despite rule 2 already naming
-                    # "re-authenticate" - not specific enough to stop the
-                    # model conflating it with a funds/limit issue (rule 4).
-                    # Fixed below with explicit negative contrast examples
-                    # naming these exact codes, not just positive examples.
                     "description": (
                         "Choose exactly one action. Apply these rules in order:\n"
                         "1. Bank flagged this decline specifically as fraud/risk -> 'no_action_fraud'.\n"
@@ -117,13 +88,54 @@ DECIDE_ACTION_TOOL = {
 }
 
 
-MAX_RETRIES = 3
-RETRY_BACKOFF_SECONDS = 3
+def healthcheck() -> tuple[bool, str]:
+    try:
+        resp = requests.get(f"{OLLAMA_HOST}/api/tags", timeout=5)
+        if resp.status_code == 200:
+            return True, f"Ollama reachable at {OLLAMA_HOST} ({OLLAMA_MODEL})"
+        return False, f"Ollama at {OLLAMA_HOST} returned HTTP {resp.status_code}"
+    except requests.exceptions.ConnectTimeout:
+        reason = "no answer within 5 s"
+    except requests.exceptions.ConnectionError:
+        # urllib3's own text is a 300-character pool/retry dump; say what it means
+        reason = "connection refused or host down"
+    except requests.exceptions.Timeout:
+        reason = "no answer within 5 s"
+    except Exception as e:
+        reason = str(e) or type(e).__name__
+    return False, (
+        f"Ollama not reachable at {OLLAMA_HOST}: {reason}. Is Ollama running? "
+        f"Try: ollama serve  (and ollama pull {OLLAMA_MODEL}). Set OLLAMA_HOST if it runs elsewhere."
+    )
 
 
-DEFAULT_SITUATION = (
-    "A subscription payment was halted after Razorpay's automatic 3-day retry cycle failed 3 times."
-)
+def require_ollama(skip: bool = False) -> None:
+    """Fail fast, before any record is touched, when Ollama is unreachable.
+
+    Without this the domain agents retried every record against a dead host
+    (3 attempts x backoff each) and the one-time agent quietly wrote a
+    RESULTS file in which every record had fallen back to policy.
+    """
+    if skip:
+        return
+    ok, msg = healthcheck()
+    if not ok:
+        raise SystemExit(f"Healthcheck failed: {msg} (use --skip-healthcheck to bypass)")
+    print(f"[healthcheck] {msg}")
+
+
+def non_negative_int(value: str) -> int:
+    """argparse type for a record count: a clear error instead of a traceback,
+    and no silent slicing from the end for negative numbers."""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected a whole number of records, got {value!r}"
+        ) from None
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"record count must be 0 or more, got {n}")
+    return n
 
 
 def propose_action(
@@ -134,23 +146,27 @@ def propose_action(
     id_field: str = "subscription_id",
     record_label: str = "Subscription",
 ) -> dict:
-    """
-    Ask the local model to propose an action for one failed payment record.
-    Returns {"action": str, "reasoning": str} or {"action": None, "reasoning": "<failure note>"}
-    on ANY failure - malformed tool call, HTTP error, timeout, whatever. This
-    function is designed to never raise: the caller (agent.py) treats a None
-    action as "fall back to the safest policy action", which keeps a single
-    Ollama hiccup from crashing a 150-record batch run. This retry+fallback
-    behavior exists because it was missing during the first real batch run
-    and Ollama's transient 500 killed the whole run - see BUILD_LOG.md.
+    return _llm_propose_action(
+        record,
+        decline_description,
+        decline_source,
+        situation=situation,
+        id_field=id_field,
+        record_label=record_label,
+    )
 
-    `situation`/`id_field`/`record_label` default to reproduce the original
-    halted-subscription prompt exactly (agent.py calls this with only the
-    first three positional args). agent_onetime.py passes different values
-    to reuse this same function - and the same gate, policy, and MCP tools -
-    for a domain where Razorpay has no automatic retry cycle at all: a
-    failed one-time payment. See BUILD_LOG.md §13.
-    """
+
+async def propose_action_async(
+    record: dict,
+    decline_description: str,
+    decline_source: str,
+    situation: str = DEFAULT_SITUATION,
+    id_field: str = "subscription_id",
+    record_label: str = "Subscription",
+) -> dict:
+    caller = OllamaToolCaller(
+        host=OLLAMA_HOST, model=OLLAMA_MODEL, timeout=120, retries=MAX_RETRIES, keep_alive="30m"
+    )
     prompt = (
         f"{situation}\n\n"
         f"{record_label}: {record[id_field]}\n"
@@ -160,58 +176,7 @@ def propose_action(
         f"Decline source: {decline_source}\n\n"
         f"Call record_decision with the single best next action and a short reason."
     )
-
-    last_error = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.post(
-                f"{OLLAMA_HOST}/api/chat",
-                json={
-                    "model": OLLAMA_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "tools": [DECIDE_ACTION_TOOL],
-                    "stream": False,
-                    # Keep the model resident between calls - without this,
-                    # Ollama was reloading ~5GB from disk on every single
-                    # call (~20s each) and eventually 500'd under the churn.
-                    "keep_alive": "30m",
-                    # This is a policy classification task, not creative
-                    # generation - deterministic output is the correct
-                    # default here, not Ollama's ~0.8 sampling temperature.
-                    "options": {"temperature": 0},
-                },
-                timeout=120,
-            )
-            resp.raise_for_status()
-            message = resp.json().get("message", {})
-            tool_calls = message.get("tool_calls") or []
-
-            if not tool_calls:
-                return {"action": None, "reasoning": "Model returned no tool call."}
-
-            args = tool_calls[0].get("function", {}).get("arguments", {})
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except json.JSONDecodeError:
-                    return {
-                        "action": None,
-                        "reasoning": "Model returned malformed tool-call arguments.",
-                    }
-
-            action = args.get("action")
-            reasoning = args.get("reasoning", "")
-            if not action:
-                return {"action": None, "reasoning": "Model tool call missing 'action' field."}
-
-            return {"action": action, "reasoning": reasoning}
-
-        except requests.exceptions.RequestException as e:
-            last_error = e
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
-
-    return {
-        "action": None,
-        "reasoning": f"Ollama request failed after {MAX_RETRIES} attempts: {last_error}",
-    }
+    messages = [{"role": "user", "content": prompt}]
+    return await caller.call_tool(
+        messages, [DECIDE_ACTION_TOOL], fallback_key="action", fallback_value=None
+    )

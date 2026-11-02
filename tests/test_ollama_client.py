@@ -9,9 +9,10 @@ server needed - CI has no local model to call.
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
 
-import failsafe.ollama_client as ollama_client
+from failsafe import ollama_client
 
 
 def _fake_response(json_body: dict):
@@ -133,3 +134,95 @@ if __name__ == "__main__":
     print(f"\n{len(tests) - failures}/{len(tests)} passed")
     if failures:
         raise SystemExit(1)
+
+
+# --- healthcheck / async proposal (added 2026-10-31) -----------------------
+
+
+def test_healthcheck_ok_names_host_and_model():
+    from failsafe import ollama_client
+
+    with patch("failsafe.ollama_client.requests.get", return_value=MagicMock(status_code=200)):
+        ok, msg = ollama_client.healthcheck()
+    assert ok is True
+    assert ollama_client.OLLAMA_HOST in msg and ollama_client.OLLAMA_MODEL in msg
+
+
+def test_healthcheck_non_200_is_unhealthy():
+    from failsafe import ollama_client
+
+    with patch("failsafe.ollama_client.requests.get", return_value=MagicMock(status_code=503)):
+        ok, msg = ollama_client.healthcheck()
+    assert ok is False and "HTTP 503" in msg
+
+
+def test_healthcheck_connection_error_gives_actionable_hint():
+    from failsafe import ollama_client
+
+    with patch("failsafe.ollama_client.requests.get", side_effect=ConnectionError("refused")):
+        ok, msg = ollama_client.healthcheck()
+    assert ok is False
+    assert "refused" in msg and "ollama serve" in msg
+
+
+@pytest.mark.parametrize(
+    ("exc", "reason"),
+    [
+        (
+            requests.exceptions.ConnectionError(
+                "HTTPConnectionPool(host='x', port=9): Max retries exceeded ..."
+            ),
+            "connection refused or host down",
+        ),
+        (requests.exceptions.ConnectTimeout("pool timeout dump"), "no answer within 5 s"),
+        (requests.exceptions.ReadTimeout("read timeout dump"), "no answer within 5 s"),
+        (RuntimeError(), "RuntimeError"),
+    ],
+)
+def test_healthcheck_failure_reason_is_short_and_plain(exc, reason):
+    from failsafe import ollama_client
+
+    with patch("failsafe.ollama_client.requests.get", side_effect=exc):
+        ok, msg = ollama_client.healthcheck()
+    assert ok is False
+    assert f"Ollama not reachable at {ollama_client.OLLAMA_HOST}: {reason}." in msg
+    assert "Max retries" not in msg and "dump" not in msg
+    assert "ollama serve" in msg and "OLLAMA_HOST" in msg
+
+
+def test_propose_action_async_builds_prompt_and_uses_decision_tool():
+    import asyncio
+
+    from failsafe import ollama_client
+
+    caller = MagicMock()
+
+    async def _call_tool(messages, tools, fallback_key, fallback_value):
+        caller.seen = (messages, tools, fallback_key, fallback_value)
+        return {"action": "delayed_retry", "reasoning": "x"}
+
+    caller.call_tool = _call_tool
+    record = {"payment_id": "pay_9", "amount_paise": 12345, "decline_code": "insufficient_funds"}
+    with patch("failsafe.ollama_client.OllamaToolCaller", return_value=caller):
+        out = asyncio.run(
+            ollama_client.propose_action_async(
+                record,
+                "low balance",
+                "customer",
+                situation="SITUATION",
+                id_field="payment_id",
+                record_label="Payment",
+            )
+        )
+    assert out == {"action": "delayed_retry", "reasoning": "x"}
+    messages, tools, key, fallback = caller.seen
+    prompt = messages[0]["content"]
+    assert prompt.startswith("SITUATION")
+    assert (
+        "Payment: pay_9" in prompt
+        and "Rs 123.45" in prompt
+        and "Decline source: customer" in prompt
+    )
+    assert tools == [ollama_client.DECIDE_ACTION_TOOL]
+    # A missing/unparseable tool call must fall back to None (-> gate decides), never a guessed action.
+    assert (key, fallback) == ("action", None)

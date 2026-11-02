@@ -17,15 +17,32 @@ Scenario: some recovered subscriptions came through a referral partner
 those recovers, the partner earns a fixed percentage via a Route transfer,
 split at the same moment the recovery order is created - not a separate
 manual payout step.
+
+Safety: the demo runs in SIMULATE mode unless `--live` is passed
+explicitly, even when real Razorpay test keys are configured, and it prints
+which audit log it appends to. `--audit-log PATH` sends its events somewhere
+other than the default `logs/audit_log.jsonl` (the flagship log behind the
+published results); `--results PATH` does the same for ROUTE_RESULTS.md.
+
+    python -m failsafe.route_demo                                  # simulate
+    python -m failsafe.route_demo --audit-log logs/route_audit.jsonl
+    python -m failsafe.route_demo --live                           # real test-mode Route orders
 """
 
+import argparse
 import asyncio
+import contextlib
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
 
 from mcp import Client
 
+from failsafe import razorpay_client
 from failsafe.audit_log import AuditLogger
 from failsafe.gate import MAX_ACTION_AMOUNT_PAISE
-from failsafe.mcp_server import PARTNER_LINKED_ACCOUNT_ID
+from failsafe.mcp_server import PARTNER_LINKED_ACCOUNT_ID, simulate_mode
 from failsafe.mcp_server import server as mcp_server
 from failsafe.paths import LOGS_DIR, PROJECT_ROOT
 
@@ -36,7 +53,7 @@ PARTNER_SHARE_PCT = 0.05  # referral partner earns 5% of the recovered amount
 
 # Small standalone synthetic scenario: 5 previously-halted subscriptions
 # that are now being recovered, each attributed to a referral partner.
-REFERRED_RECOVERIES = [
+REFERRED_RECOVERIES: list[dict[str, Any]] = [
     {
         "subscription_id": "sub_route_demo_001",
         "amount_paise": 149900,
@@ -65,8 +82,8 @@ REFERRED_RECOVERIES = [
 ]
 
 
-async def run():
-    audit = AuditLogger(AUDIT_PATH)
+async def run(audit_path: Path | None = None, results_path: Path | None = None) -> None:
+    audit = AuditLogger(audit_path or AUDIT_PATH)
     audit.log("route_demo_started", total=len(REFERRED_RECOVERIES))
 
     results = []
@@ -103,7 +120,7 @@ async def run():
                     "partner_share_paise": partner_share,
                 },
             )
-            tool_result = call.content[0].text if call.content else None
+            tool_result = getattr(call.content[0], "text", None) if call.content else None
             audit.log(
                 "route_transfer",
                 subscription_id=rec["subscription_id"],
@@ -127,10 +144,10 @@ async def run():
             )
 
     audit.log("route_demo_finished", total=len(results))
-    write_results(results)
+    write_results(results, results_path)
 
 
-def write_results(results: list[dict]):
+def write_results(results: list[dict], results_path: Path | None = None):
     executed = [r for r in results if not r["blocked"]]
     blocked = [r for r in results if r["blocked"]]
     total_partner_paise = sum(r["partner_share_paise"] for r in executed)
@@ -163,9 +180,89 @@ def write_results(results: list[dict]):
             f"Rs {r['partner_share_paise'] / 100:,.2f} | {status} |"
         )
 
-    RESULTS_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"\nWrote {RESULTS_PATH}")
+    out = results_path or RESULTS_PATH
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"\nWrote {out}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m failsafe.route_demo",
+        description="Route split-settlement demo. Runs in SIMULATE mode unless --live is given.",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--simulate",
+        dest="live",
+        action="store_false",
+        help="force simulate mode, even if Razorpay test keys are configured (default)",
+    )
+    mode.add_argument(
+        "--live",
+        dest="live",
+        action="store_true",
+        help="use the configured rzp_test_ keys and place real test-mode Route orders",
+    )
+    parser.set_defaults(live=False)
+    parser.add_argument(
+        "--audit-log",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="audit log to append events to (default: logs/audit_log.jsonl, the flagship log)",
+    )
+    parser.add_argument(
+        "--results",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="where to write the results markdown (default: ROUTE_RESULTS.md in the repo root)",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    audit_path: Path = args.audit_log or AUDIT_PATH
+    results_path: Path = args.results or RESULTS_PATH
+
+    if args.live and razorpay_client.SIMULATE:
+        print(
+            "error: --live needs Razorpay test keys (RAZORPAY_KEY_ID starting with rzp_test_ "
+            "and RAZORPAY_KEY_SECRET) in the environment or .env, and none are configured. "
+            "Run without --live to use simulate mode.",
+            file=sys.stderr,
+        )
+        return 2
+    if audit_path.is_dir():
+        print(
+            f"error: --audit-log must be a file path, not a directory: {audit_path}",
+            file=sys.stderr,
+        )
+        return 2
+    if results_path.is_dir():
+        print(
+            f"error: --results must be a file path, not a directory: {results_path}",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.live:
+        print("Mode: LIVE (real Razorpay test-mode Route orders)")
+    else:
+        print("Mode: SIMULATE (no Razorpay calls)")
+    print(f"Audit log: {audit_path.resolve()} (appending)")
+    if audit_path.resolve() == AUDIT_PATH.resolve():
+        print(
+            "Note: this is the flagship audit log behind the published results. "
+            "Pass --audit-log PATH to keep Route events out of it."
+        )
+
+    ctx = contextlib.nullcontext() if args.live else simulate_mode(True)
+    with ctx:
+        asyncio.run(run(audit_path, results_path))
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    raise SystemExit(main())

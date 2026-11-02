@@ -1,0 +1,24 @@
+== FailSafe offline demo: 12 halted subscriptions, naive stand-in LLM, SIMULATE mode ==
+
+0 already done (checkpoint), 12 remaining
+sub_2c794247ffee4f  payment_timed_out                -> immediate_retry
+sub_ab3172c242d241  insufficient_funds               -> delayed_retry
+sub_8611bd9d249947  gateway_technical_error          -> immediate_retry
+sub_49211741b37b4d  transaction_limit_exceeded       -> delayed_retry
+sub_bd31c471dfd343  card_expired                     -> no_action_unrecoverable
+sub_d003227e889948  insufficient_funds               -> delayed_retry
+sub_f5451c0fee9045  transaction_limit_exceeded       -> delayed_retry
+sub_c93b04be438e43  card_expired                     -> payment_link_nudge
+sub_7a6094c0a34f42  card_disabled_for_online_payments -> payment_link_nudge
+sub_bc7b22e318c14c  insufficient_funds               -> no_action_unrecoverable
+sub_4024e87a918948  insufficient_funds               -> no_action_unrecoverable
+sub_a3a50e248e6941  card_expired                     -> payment_link_nudge
+
+Wrote <tmpdir>/RESULTS.md
+Wrote <tmpdir>/REPORT.html (12 gate decisions as of this generation)
+
+== Summary ==
+gate decisions:            12
+LLM proposals overridden:  10/12 (stand-in always says immediate_retry)
+MCP tool calls (simulated): {'create_retry_order': 6, 'flag_for_manual_review': 3, 'create_payment_link': 3}
+audit events written:      38

@@ -36,16 +36,15 @@ import asyncio
 import tempfile
 from contextlib import nullcontext
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from mcp import Client
 
-import failsafe.mcp_server as mcp_server
+from failsafe import mcp_server, recovery_pipeline
 from failsafe.audit_log import AuditLogger
 from failsafe.decline_codes import RecoveryAction
 from failsafe.gate import Gate
-from failsafe.razorpay_client import force_simulate
 from failsafe.recovery_pipeline import LEFT_ALONE_BY_DETECTION, process_record
 
 ACTION_TO_TOOL = {
@@ -97,7 +96,12 @@ def _run(
         else nullcontext()
     )
     try:
-        with force_simulate(), detect_patch, diagnose_patch:
+        with (
+            patch.object(mcp_server, "SIMULATE", True),
+            patch.object(mcp_server._rp, "simulate", True),
+            detect_patch,
+            diagnose_patch,
+        ):
             result = asyncio.run(_go())
         events = audit.read_all()
         return result, events
@@ -190,7 +194,8 @@ def test_correct_needs_attention_lets_an_at_risk_record_proceed_normally():
 
     try:
         with (
-            force_simulate(),
+            patch.object(mcp_server, "SIMULATE", True),
+            patch.object(mcp_server._rp, "simulate", True),
             patch(
                 "failsafe.recovery_pipeline.detect_at_risk",
                 return_value={
@@ -361,14 +366,14 @@ def test_injected_detection_parse_failure_exercises_the_real_failure_path():
 
     try:
         with (
-            force_simulate(),
+            patch.object(mcp_server, "SIMULATE", True),
+            patch.object(mcp_server._rp, "simulate", True),
             patch(
                 "failsafe.recovery_pipeline.diagnose_decline_code",
                 return_value={"decline_code": "insufficient_funds", "reasoning": "matches"},
             ),
-            patch(
-                "failsafe.recovery_pipeline.propose_action",
-                return_value={"action": "delayed_retry", "reasoning": "matches policy"},
+            recovery_pipeline.use_proposer(
+                MagicMock(return_value={"action": "delayed_retry", "reasoning": "matches policy"})
             ),
         ):
             result = asyncio.run(_go())

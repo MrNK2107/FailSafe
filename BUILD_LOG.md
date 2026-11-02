@@ -125,3 +125,58 @@ Full restructure and hygiene pass. Everything below is in this repo's history.
   `EASY_EXPLAINER.md` written against reality: every number derived by
   `scripts/metrics.py` from the committed logs, dead references removed,
   stale docstrings updated to the new simulate seam.
+
+## Phase 4 — Replay, decision trace, console (October–November 2026)
+
+Built on a parallel line of branches that started from a pre-overhaul
+checkout, then merged onto the Phase 3 layout (`integrate/failsafe-on-main`).
+Everything below lives in `src/failsafe/` now.
+
+### Hardening
+
+- Single import path, explicit `mcp_server.simulate_mode()` switch in place
+  of runtime `unittest.mock` patching in production code, proposer injection
+  in `recovery_pipeline`, LLM-fallback circuit breaker (reset per run, trips
+  on repeated invalid actions), MCP tool errors no longer counted as executed
+  actions, checkpoint atomic writes and resume for all five pipelines, one
+  malformed record no longer aborts the integrated run, agents fail fast when
+  Ollama is down, `route_demo` simulates by default (`--live` to opt in).
+- Corrected override metric (`override_rate_of_proposals`) reported next to
+  the legacy one; see METRICS.md.
+- mypy clean with `check_untyped_defs` (blocking in CI); coverage gate 95%.
+
+### Product
+
+- **Replay** (`failsafe/replay.py`): every recorded `gate_decision` re-run
+  through the real gate. Determinism check (326/326 subscriptions, 55/55
+  one-time), `--policy` what-if (flips, transitions, money in/out/re-timed,
+  LLM agreement), `--baseline` diff, Markdown incident reports. Gate hooks:
+  optional `Gate(policy=...)`, ordered `GATE_CHECKS` + `deciding_check()`;
+  `recovery_pipeline` additionally logs `amount_paise` / `halted_days_ago` on
+  `gate_decision` (additive).
+- **Decision trace** (`failsafe/decision_trace.py` → `TRACE.html`).
+- **Console** (`failsafe/console.py`): read-only stdlib server with the
+  trace, report, policy view, replay API and a what-if policy editor
+  (in-memory only; returns the candidate file and PR text).
+- **Policy CI** (`policy-check.yml`): replay under the base branch's policy
+  must reproduce; the PR's what-if is posted as the job summary.
+- Dockerfile (console by default, non-root, healthcheck), `docs/DEPLOY.md`,
+  `docs/PRODUCT.md`, brand assets in `docs/brand/`.
+
+### Identity
+
+The Phase 4 branches were cut before the Phase 3 rename and had re-branded
+the product surface as "Recoup". On integration the Phase 3 decision stands:
+the product, package, repo and CLI are all **FailSafe** / `failsafe`
+(`python -m failsafe ...`), and the Recoup name was removed from the README,
+docs, generated pages, console, brand assets and screenshots. MCP server name
+and Razorpay `notes.source` tags in the committed evidence logs are unchanged
+(`recovery-agent`).
+
+### Possible follow-up
+
+- Port Phase 3's lazy `razorpay_client` (SDK built on first use, one dynamic
+  `simulate_mode()` knob with `force_simulate()`) onto this tree; it was not
+  carried over because ~15 Phase 4 tests patch `mcp_server.SIMULATE` /
+  `_rp.simulate` / `razorpay_client._client`, which `mcp_server.simulate_mode()`
+  currently sets together.

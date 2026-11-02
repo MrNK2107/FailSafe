@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-import failsafe.diagnose as diagnose
+from failsafe import diagnose
 
 
 def _fake_response(json_body: dict):

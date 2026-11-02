@@ -26,7 +26,7 @@ import os
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
 
-from failsafe.razorpay_client import KEY_ID, KEY_SECRET, simulate_mode
+from failsafe.razorpay_client import KEY_ID, KEY_SECRET, SIMULATE
 
 DOCKER_IMAGE = "mcp/razorpay"
 
@@ -49,7 +49,7 @@ def _server_params() -> StdioServerParameters:
 
 
 async def call_official_tool(tool_name: str, arguments: dict) -> dict:
-    if simulate_mode():
+    if SIMULATE:
         raise RuntimeError(
             "call_official_tool() requires real rzp_test_ keys - the official "
             "Razorpay MCP server has no simulate mode. Set RAZORPAY_KEY_ID/"
@@ -58,7 +58,7 @@ async def call_official_tool(tool_name: str, arguments: dict) -> dict:
         )
     async with Client(_server_params()) as client:
         result = await client.call_tool(tool_name, arguments)
-        text = result.content[0].text if result.content else "{}"
+        text = getattr(result.content[0], "text", "{}") if result.content else "{}"
         try:
             return json.loads(text)
         except json.JSONDecodeError:

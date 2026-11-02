@@ -19,7 +19,7 @@ from failsafe.decline_codes import (
 
 
 def test_every_code_has_a_valid_recovery_action():
-    for _code, info in DECLINE_CODES.items():
+    for code, info in DECLINE_CODES.items():
         assert isinstance(info.allowed_action, RecoveryAction)
 
 
@@ -70,7 +70,7 @@ def test_every_recovery_action_has_a_plain_english_glossary_entry():
 def test_unknown_code_raises_keyerror():
     try:
         get_decline_code("not_a_real_code")
-        raise AssertionError("expected KeyError")
+        assert False, "expected KeyError"
     except KeyError:
         pass
 
@@ -98,7 +98,7 @@ def test_config_typo_in_allowed_action_fails_loudly():
                 "simulated_success_rate": 0.5,
             }
         )
-        raise AssertionError("expected ValueError for invalid allowed_action")
+        assert False, "expected ValueError for invalid allowed_action"
     except ValueError as e:
         assert "allowed_action" in str(e)
 
@@ -113,7 +113,7 @@ def test_config_typo_in_source_fails_loudly():
                 "simulated_success_rate": 0.5,
             }
         )
-        raise AssertionError("expected ValueError for invalid source")
+        assert False, "expected ValueError for invalid source"
     except ValueError as e:
         assert "source" in str(e)
 
@@ -131,7 +131,7 @@ def test_config_out_of_range_success_rate_fails_loudly():
                 "simulated_success_rate": 5.0,
             }
         )
-        raise AssertionError("expected ValueError for out-of-range simulated_success_rate")
+        assert False, "expected ValueError for out-of-range simulated_success_rate"
     except ValueError as e:
         assert "simulated_success_rate" in str(e)
 
@@ -146,7 +146,7 @@ def test_config_negative_success_rate_fails_loudly():
                 "simulated_success_rate": -0.1,
             }
         )
-        raise AssertionError("expected ValueError for negative simulated_success_rate")
+        assert False, "expected ValueError for negative simulated_success_rate"
     except ValueError as e:
         assert "simulated_success_rate" in str(e)
 
@@ -161,7 +161,7 @@ def test_config_non_numeric_success_rate_fails_loudly():
                 "simulated_success_rate": "high",
             }
         )
-        raise AssertionError("expected ValueError for non-numeric simulated_success_rate")
+        assert False, "expected ValueError for non-numeric simulated_success_rate"
     except ValueError as e:
         assert "simulated_success_rate" in str(e)
 

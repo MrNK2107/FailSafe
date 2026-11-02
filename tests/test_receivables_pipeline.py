@@ -17,9 +17,8 @@ from unittest.mock import patch
 import pytest
 from mcp import Client
 
-import failsafe.mcp_server as mcp_server
+from failsafe import mcp_server
 from failsafe.audit_log import AuditLogger
-from failsafe.razorpay_client import force_simulate
 from failsafe.receivables_agent import process_one
 from failsafe.receivables_gate import (
     DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD,
@@ -39,7 +38,10 @@ def _run(invoice: dict, diagnosis_return=None, inject_failure=None):
             return await process_one(client, gate, audit, invoice, inject_failure=inject_failure)
 
     try:
-        with force_simulate():
+        with (
+            patch.object(mcp_server, "SIMULATE", True),
+            patch.object(mcp_server._rp, "simulate", True),
+        ):
             if diagnosis_return is not None:
                 with patch(
                     "failsafe.receivables_agent.diagnose_receivable", return_value=diagnosis_return

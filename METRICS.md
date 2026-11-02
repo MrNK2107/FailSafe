@@ -89,3 +89,35 @@ behavior, documented in `failsafe/receivables_gate.py`'s docstring.
   [REAL_MCP_RESULTS.md](REAL_MCP_RESULTS.md).
 - Detection (detect.py) was proven on its 30-record demo log
   (`logs/detection_demo_audit.jsonl`) but is not wired into the flagship batch.
+
+## Replay determinism and what-if (FailSafe)
+
+The same committed logs are the input to the replay engine
+([`src/failsafe/replay.py`](src/failsafe/replay.py)), which re-runs every
+recorded `gate_decision` through the real `Gate`:
+
+| Check | Command | Result |
+|---|---|---|
+| Subscriptions reproduce under the committed policy | `python -m failsafe.replay --fail-on-change` | 326/326 decisions identical |
+| One-time payments reproduce | `python -m failsafe.replay --audit logs/audit_log_onetime.jsonl --data data/failed_onetime_payments.json --fail-on-change` | 55/55 identical |
+| LLM agreement with the committed policy | (same replay) | 320/326 (98%) subscriptions, 48/55 (87%) one-time — the same figures `scripts/metrics.py` reports |
+| What-if: `examples/policy_whatif_retry_low_balance.json` | `python -m failsafe.replay --policy examples/policy_whatif_retry_low_balance.json` | 65 decisions change, 59 re-timed, ₹1,190.14 pulled back; LLM agreement drops to 221/326 |
+
+CI enforces the first two rows (`tests.yml` and `policy-check.yml`).
+
+## Override rate of real proposals (latest run per record)
+
+`scripts/metrics.py` counts overrides over all cumulative decisions (6/326
+subscriptions, 7/55 one-time). A second, stricter view divides only over
+records where the LLM actually produced a valid proposal (`llm_proposed`),
+taking the latest published run per record. `python
+scripts/corrected_override_metric.py` regenerates
+[OVERRIDE_METRIC_CORRECTED.md](OVERRIDE_METRIC_CORRECTED.md):
+
+| Run | Legacy (all records) | Corrected (`override_rate_of_proposals`) |
+|---|---|---|
+| Subscriptions, latest run | 3/150 (2.0%) | 3/150 (2.0%) |
+| One-time payments, latest run | 4/30 (13.3%) | 4/30 (13.3%) |
+
+Every record in those runs got a valid proposal, so the two agree here; they
+diverge on runs with parse failures or fallbacks.

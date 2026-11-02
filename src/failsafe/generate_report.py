@@ -9,7 +9,7 @@ Theme: Razorpay-brand navy/blue dark console. Brand blue #2B84EB on deep
 navy, with the same semantic action colors the policy dashboard uses, so
 both generated pages read as one product on camera.
 
-Usage: python generate_report.py
+Usage: python -m failsafe.generate_report
 """
 
 import html
@@ -33,7 +33,7 @@ DEFAULT_BAR_COLOR = "#5AA9F5"
 
 def _load_events() -> list[dict]:
     if not AUDIT_PATH.exists():
-        raise SystemExit(f"No audit log found at {AUDIT_PATH}. Run agent.py first.")
+        raise SystemExit(f"No audit log found at {AUDIT_PATH}. Run python -m failsafe.agent first.")
     with AUDIT_PATH.open(encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
@@ -74,7 +74,7 @@ def build_report():
 
     if not gate_decisions:
         REPORT_PATH.write_text(
-            "<title>Report</title><p>No gate_decision events in the audit log yet. Run agent.py first.</p>",
+            "<title>Report</title><p>No gate_decision events in the audit log yet. Run python -m failsafe.agent first.</p>",
             encoding="utf-8",
         )
         print(f"Wrote {REPORT_PATH} (empty - no gate_decision events yet)")
@@ -121,7 +121,7 @@ def build_report():
     )
 
     page_html = f"""<!doctype html>
-<html><head><meta charset="utf-8"><title>FailSafe — Audit Report</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>FailSafe — Audit Report</title>
 <style>
   * {{ box-sizing:border-box; }}
   ::selection {{ background:#2B84EB; color:#FFFFFF; }}
@@ -211,7 +211,7 @@ def build_report():
 
 <h2>LLM proposal accuracy by decline code</h2>
 <div class="panel">
-<input id="filter" placeholder="Filter by decline code...">
+<input id="filter" placeholder="Filter by decline code..." aria-label="Filter by decline code">
 <table id="codeTable">
 <thead><tr><th>Decline code</th><th>Total</th><th>Matched</th><th>Mismatched</th><th>Match rate</th></tr></thead>
 <tbody>

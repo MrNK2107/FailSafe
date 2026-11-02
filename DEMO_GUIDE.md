@@ -13,13 +13,13 @@ A status snapshot and the complete/incomplete audit are at the bottom.
 python -m venv .venv
 source .venv/Scripts/activate      # Windows + Git Bash
 # .venv\Scripts\activate           # Windows cmd/PowerShell
-pip install -e ".[dev]"            # package + pytest + ruff
+pip install -e ".[dev]"            # package + pytest, ruff, mypy
 ```
 
 Verify before recording:
 
 ```bash
-pytest tests/ -v        # 206 tests, ~2s, no Ollama or keys needed
+pytest tests/ -q        # 561 tests, ~10s, no Ollama or keys needed
 python -m failsafe --help
 ```
 

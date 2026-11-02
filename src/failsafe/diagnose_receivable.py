@@ -1,57 +1,8 @@
-"""
-Root-cause diagnosis stage for OVERDUE RECEIVABLES - "why is this invoice
-actually overdue, and what kind of case is it?", inferred, not handed as
-ground truth. Mirrors diagnose.py's/diagnose_checkout_abandonment.py's
-non-negotiable rule exactly: a stage that infers something but is then
-ignored by the rest of the pipeline is theater, not a fix
-(PS_REQUIREMENTS_DEBATE.md Round 2's own framing) - see
-receivables_agent.py for where the diagnosed case_reason actually drives
-the policy lookup and the executed action.
-
-A deliberate design difference, stated honestly rather than silently
-copied: diagnose.py infers from a raw, free-text bank/gateway MESSAGE (a
-real decline surfaces as a sentence). diagnose_checkout_abandonment.py
-infers from structured funnel telemetry (a checkout session emits no
-sentence at all). Overdue receivables has neither of those artifacts -
-what it has instead is an AGING CLOCK plus a business's own payment
-history and this invoice's own communication history so far. So this
-stage takes yet another shape: structured signals in (same shape as
-detect.py/diagnose_checkout_abandonment.py), but the specific signals are
-this domain's own - `days_overdue` (the aging clock this whole category
-is actually about), `payment_terms`, `customer_payment_history_signal`,
-`reminders_sent_count`, `last_reminder_response`, and (as context, like
-diagnose.py's amount_paise / diagnose_checkout_abandonment.py's
-amount_paise) `amount_vs_typical_ratio` - this invoice's amount relative
-to the customer's own typical order size.
-
-Given ONLY those signals. NEVER given the ground-truth case_reason -
-generate_receivables_data.py keeps that field only for scoring, exactly
-like decline_code/abandonment_reason are kept only for scoring in the
-other two domains.
-
-Same conventions as diagnose.py/detect.py/diagnose_checkout_abandonment.py:
-reuses ollama_client's constants directly (one local model, one config
-surface, one retry budget), a dedicated tool schema
-(record_receivable_diagnosis - a FIFTH distinct tool schema in this
-project, after record_decision, record_diagnosis, record_detection, and
-record_abandonment_diagnosis - each pipeline stage gets its own schema on
-purpose), temperature 0 (classification, not creative generation), and
-designed to NEVER raise - any Ollama hiccup or malformed tool call returns
-{"case_reason": None, "reasoning": "<failure note>"} so a single bad
-diagnosis can never crash a batch.
-
-Deliberately does NOT validate the returned case_reason against
-ReceivableReason here, mirroring every prior diagnosis stage's own choice
-to leave that check to the caller (receivables_agent.py) - kept symmetric
-with the rest of the project on purpose, not an oversight.
-"""
-
-import json
 import time
 
 import requests
 
-from failsafe.ollama_client import MAX_RETRIES, OLLAMA_HOST, OLLAMA_MODEL, RETRY_BACKOFF_SECONDS
+from failsafe.llm_client import MAX_RETRIES, OLLAMA_HOST, OLLAMA_MODEL, OllamaToolCaller
 
 _REASON_DESCRIPTIONS = {
     "cash_flow_delay": (
@@ -173,6 +124,10 @@ DIAGNOSE_RECEIVABLE_TOOL = {
     },
 }
 
+_caller = OllamaToolCaller(
+    host=OLLAMA_HOST, model=OLLAMA_MODEL, timeout=120, retries=MAX_RETRIES, keep_alive="30m"
+)
+
 
 def diagnose_receivable(
     days_overdue: int,
@@ -182,16 +137,6 @@ def diagnose_receivable(
     last_reminder_response: str | None,
     amount_vs_typical_ratio: float | None = None,
 ) -> dict:
-    """
-    Ask the local model to infer WHY an invoice is overdue from ONLY the
-    signals above - never the ground-truth case_reason. Returns
-    {"case_reason": str, "reasoning": str} on success, or
-    {"case_reason": None, "reasoning": "<failure note>"} on ANY failure -
-    malformed tool call, HTTP error, timeout, whatever. Mirrors every
-    prior diagnosis stage's never-raise contract exactly: the caller
-    treats a None case_reason as "flag for manual review", which must
-    never crash a batch run.
-    """
     context = (
         f"\nInvoice amount vs this customer's typical order size: {amount_vs_typical_ratio:.2f}x"
         if amount_vs_typical_ratio is not None
@@ -216,55 +161,13 @@ def diagnose_receivable(
         "Call record_receivable_diagnosis with the single reason that best "
         "explains why this invoice is overdue and a short reasoning."
     )
-
-    last_error = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.post(
-                f"{OLLAMA_HOST}/api/chat",
-                json={
-                    "model": OLLAMA_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "tools": [DIAGNOSE_RECEIVABLE_TOOL],
-                    "stream": False,
-                    "keep_alive": "30m",
-                    "options": {"temperature": 0},
-                },
-                timeout=120,
-            )
-            resp.raise_for_status()
-            message = resp.json().get("message", {})
-            tool_calls = message.get("tool_calls") or []
-
-            if not tool_calls:
-                return {"case_reason": None, "reasoning": "Model returned no tool call."}
-
-            args = tool_calls[0].get("function", {}).get("arguments", {})
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except json.JSONDecodeError:
-                    return {
-                        "case_reason": None,
-                        "reasoning": "Model returned malformed tool-call arguments.",
-                    }
-
-            case_reason = args.get("case_reason")
-            reasoning = args.get("reasoning", "")
-            if not case_reason:
-                return {
-                    "case_reason": None,
-                    "reasoning": "Model tool call missing 'case_reason' field.",
-                }
-
-            return {"case_reason": case_reason, "reasoning": reasoning}
-
-        except requests.exceptions.RequestException as e:
-            last_error = e
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
-
-    return {
-        "case_reason": None,
-        "reasoning": f"Ollama request failed after {MAX_RETRIES} attempts: {last_error}",
-    }
+    messages = [{"role": "user", "content": prompt}]
+    result = _caller.call_tool_sync(
+        messages, [DIAGNOSE_RECEIVABLE_TOOL], fallback_key="case_reason", fallback_value=None
+    )
+    if "case_reason" not in result:
+        return {
+            "case_reason": None,
+            "reasoning": result.get("reasoning", "Model returned no tool call."),
+        }
+    return {"case_reason": result.get("case_reason"), "reasoning": result.get("reasoning", "")}

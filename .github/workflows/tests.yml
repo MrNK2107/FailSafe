@@ -3,10 +3,19 @@ name: tests
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -21,17 +30,22 @@ jobs:
           pip install -e .[dev]
 
       - name: Ruff lint
-        run: ruff check src/ tests/
+        run: ruff check src/ tests/ scripts/
 
       - name: Ruff format check
-        run: ruff format src/ tests/ --check
+        run: ruff format src/ tests/ scripts/ --check
+
+      - name: Mypy
+        run: mypy src/failsafe
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        # requires-python is >=3.11 (audit_log uses datetime.UTC).
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
 
@@ -45,5 +59,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[dev]
 
-      - name: Run tests
-        run: pytest tests/ -v
+      # Coverage gate = the measured number, floored. Raise it when coverage
+      # goes up; never lower it to make a PR pass.
+      - name: Run tests with coverage
+        run: python -m pytest --cov=failsafe --cov-report=term-missing --cov-report=xml --cov-fail-under=95 --timeout=30 --reruns 2 -q
+
+      - name: Offline demo smoke test (no Ollama, no Razorpay keys)
+        run: python scripts/offline_demo.py --n 12
+
+      - name: Replay determinism (committed audit log reproduces exactly)
+        run: python -m failsafe.replay --fail-on-change
+
+      - name: Metrics recompute from audit logs
+        run: python scripts/metrics.py
+
+      - name: Upload coverage report
+        if: always() && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
+
+      - name: Upload logs artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.python-version }}
+          path: logs/*.jsonl
+          if-no-files-found: ignore

@@ -41,11 +41,10 @@ from unittest.mock import patch
 import pytest
 from mcp import Client
 
-import failsafe.mcp_server as mcp_server
+from failsafe import mcp_server
 from failsafe.audit_log import AuditLogger
 from failsafe.decline_codes import RecoveryAction
 from failsafe.gate import Gate
-from failsafe.razorpay_client import force_simulate
 from failsafe.recovery_pipeline import process_record
 
 ACTION_TO_TOOL = {
@@ -80,7 +79,10 @@ def _run(record: dict, raw_signal_field: str | None, diagnosis_return=None, inje
             )
 
     try:
-        with force_simulate():
+        with (
+            patch.object(mcp_server, "SIMULATE", True),
+            patch.object(mcp_server._rp, "simulate", True),
+        ):
             if diagnosis_return is not None:
                 with patch(
                     "failsafe.recovery_pipeline.diagnose_decline_code",

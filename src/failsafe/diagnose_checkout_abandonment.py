@@ -1,55 +1,8 @@
-"""
-Root-cause diagnosis stage for CHECKOUT ABANDONMENT - "why did this
-customer abandon?", inferred, not handed as ground truth. Mirrors
-diagnose.py's non-negotiable rule exactly: a stage that infers something
-but is then ignored by the rest of the pipeline is theater, not a fix
-(PS_REQUIREMENTS_DEBATE.md Round 2's own framing) - see
-checkout_abandonment_agent.py for where the diagnosed reason actually
-drives the policy lookup and the executed action.
-
-A deliberate design difference from diagnose.py, stated honestly rather
-than silently copied: diagnose.py infers a decline_code from a raw,
-free-text bank/gateway MESSAGE, because that's genuinely how a real
-payment decline surfaces (a decline reason string). A checkout funnel has
-no equivalent free-text artifact for an abandoned session - there is no
-human/bank writing a sentence about why someone closed a tab. What a real
-checkout funnel DOES emit is structured telemetry: which stage the
-customer reached, how long ago they left, what device they were on, and
-whether they've bought before. So this stage takes the same shape as
-detect.py (structured signals in, one classification out) rather than
-diagnose.py's free-text shape - the more defensible modeling choice for
-this domain, not an oversight or a missed opportunity to reuse code.
-
-Given ONLY: checkout_stage, minutes_since_abandonment, device_type,
-is_returning_customer, and (as context, like diagnose.py's amount_paise)
-amount_paise. NEVER given the ground-truth abandonment_reason -
-generate_checkout_abandonment_data.py keeps that field only for scoring,
-exactly like decline_code is kept in generate_data.py only for scoring
-diagnose.py's accuracy.
-
-Same conventions as diagnose.py/detect.py: reuses ollama_client's
-constants directly (one local model, one config surface, one retry
-budget), a dedicated tool schema (record_abandonment_diagnosis - a
-FOURTH distinct tool schema in this project, after record_decision,
-record_diagnosis, and record_detection - each pipeline stage gets its own
-schema on purpose), temperature 0 (classification, not creative
-generation), and designed to NEVER raise - any Ollama hiccup or malformed
-tool call returns {"reason": None, "reasoning": "<failure note>"} so a
-single bad diagnosis can never crash a batch.
-
-Deliberately does NOT validate the returned reason against
-AbandonmentReason here, mirroring diagnose_decline_code's/detect_at_risk's
-own choice to leave that check to the caller
-(checkout_abandonment_agent.py) - kept symmetric with the rest of the
-project on purpose, not an oversight.
-"""
-
-import json
 import time
 
 import requests
 
-from failsafe.ollama_client import MAX_RETRIES, OLLAMA_HOST, OLLAMA_MODEL, RETRY_BACKOFF_SECONDS
+from failsafe.llm_client import MAX_RETRIES, OLLAMA_HOST, OLLAMA_MODEL, OllamaToolCaller
 
 _REASON_DESCRIPTIONS = {
     "otp_delay_or_failure": "OTP/3-D Secure authentication timed out, failed, or never arrived - a technical/delivery problem, not a customer decision",
@@ -134,6 +87,10 @@ DIAGNOSE_ABANDONMENT_TOOL = {
     },
 }
 
+_caller = OllamaToolCaller(
+    host=OLLAMA_HOST, model=OLLAMA_MODEL, timeout=120, retries=MAX_RETRIES, keep_alive="30m"
+)
+
 
 def diagnose_abandonment_reason(
     checkout_stage: str,
@@ -142,16 +99,6 @@ def diagnose_abandonment_reason(
     is_returning_customer: bool,
     amount_paise: int | None = None,
 ) -> dict:
-    """
-    Ask the local model to infer WHY a checkout was abandoned from ONLY
-    structured funnel signals - never the ground-truth abandonment_reason.
-    Returns {"reason": str, "reasoning": str} on success, or
-    {"reason": None, "reasoning": "<failure note>"} on ANY failure -
-    malformed tool call, HTTP error, timeout, whatever. Mirrors
-    diagnose_decline_code's/detect_at_risk's never-raise contract exactly:
-    the caller treats a None reason as "flag for manual review", which
-    must never crash a batch run.
-    """
     context = f"\nCart amount: Rs {amount_paise / 100:.2f}" if amount_paise is not None else ""
     prompt = (
         "A customer started checkout but never completed a payment attempt - "
@@ -166,52 +113,13 @@ def diagnose_abandonment_reason(
         "Call record_abandonment_diagnosis with the single reason that best "
         "explains this abandonment and a short reason."
     )
-
-    last_error = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.post(
-                f"{OLLAMA_HOST}/api/chat",
-                json={
-                    "model": OLLAMA_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "tools": [DIAGNOSE_ABANDONMENT_TOOL],
-                    "stream": False,
-                    "keep_alive": "30m",
-                    "options": {"temperature": 0},
-                },
-                timeout=120,
-            )
-            resp.raise_for_status()
-            message = resp.json().get("message", {})
-            tool_calls = message.get("tool_calls") or []
-
-            if not tool_calls:
-                return {"reason": None, "reasoning": "Model returned no tool call."}
-
-            args = tool_calls[0].get("function", {}).get("arguments", {})
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except json.JSONDecodeError:
-                    return {
-                        "reason": None,
-                        "reasoning": "Model returned malformed tool-call arguments.",
-                    }
-
-            reason = args.get("reason")
-            reasoning = args.get("reasoning", "")
-            if not reason:
-                return {"reason": None, "reasoning": "Model tool call missing 'reason' field."}
-
-            return {"reason": reason, "reasoning": reasoning}
-
-        except requests.exceptions.RequestException as e:
-            last_error = e
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
-
-    return {
-        "reason": None,
-        "reasoning": f"Ollama request failed after {MAX_RETRIES} attempts: {last_error}",
-    }
+    messages = [{"role": "user", "content": prompt}]
+    result = _caller.call_tool_sync(
+        messages, [DIAGNOSE_ABANDONMENT_TOOL], fallback_key="reason", fallback_value=None
+    )
+    if "reason" not in result:
+        return {
+            "reason": None,
+            "reasoning": result.get("reasoning", "Model returned no tool call."),
+        }
+    return {"reason": result.get("reason"), "reasoning": result.get("reasoning", "")}

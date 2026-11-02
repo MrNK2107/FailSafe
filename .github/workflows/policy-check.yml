@@ -1,0 +1,70 @@
+name: policy-check
+
+# FailSafe's policy is code: a change to the decline policy or the gate is
+# replayed against every recorded decision before it can merge.
+#  1. Determinism: the committed audit logs, replayed under the policy they
+#     were written with (the base branch's), must reproduce exactly. A gate
+#     change that silently alters past decisions fails here.
+#  2. What-if: the PR's policy is replayed against the same decisions and the
+#     flips (records, actions, money moved) are posted as the job summary.
+# Neither step calls Ollama or Razorpay.
+
+on:
+  pull_request:
+    paths:
+      - "config/decline_policy.json"
+      - "src/failsafe/gate.py"
+      - "src/failsafe/base_gate.py"
+      - "src/failsafe/decline_codes.py"
+      - "src/failsafe/replay.py"
+      - "logs/audit_log*.jsonl"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PYTHONPATH: src  # the failsafe package lives in src/failsafe; no install needed
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pick the baseline policy
+        run: |
+          if [ -n "${{ github.base_ref }}" ]; then
+            git show "origin/${{ github.base_ref }}:config/decline_policy.json" > "$RUNNER_TEMP/baseline_policy.json"
+          else
+            cp config/decline_policy.json "$RUNNER_TEMP/baseline_policy.json"
+          fi
+
+      - name: Determinism - recorded decisions reproduce under the baseline policy
+        run: |
+          python -m failsafe.replay --policy "$RUNNER_TEMP/baseline_policy.json" --fail-on-change --summary-md "$GITHUB_STEP_SUMMARY"
+          python -m failsafe.replay --audit logs/audit_log_onetime.jsonl --data data/failed_onetime_payments.json \
+            --policy "$RUNNER_TEMP/baseline_policy.json" --fail-on-change --summary-md "$GITHUB_STEP_SUMMARY"
+
+      - name: What-if - decisions this policy change would flip
+        run: python -m failsafe.replay --baseline "$RUNNER_TEMP/baseline_policy.json" --policy config/decline_policy.json --summary-md "$GITHUB_STEP_SUMMARY"
+
+      - name: Build the decision trace
+        run: python -m failsafe.decision_trace --out TRACE.html
+
+      - name: Upload TRACE.html
+        uses: actions/upload-artifact@v4
+        with:
+          name: decision-trace
+          path: TRACE.html

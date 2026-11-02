@@ -28,7 +28,7 @@ Note on transport: the MCP Client below is constructed directly against the
 in-process `server` object, which is a supported mode of the official SDK
 (mcp.Client accepts an MCPServer instance) and exercises the real MCP
 protocol messages. Swapping to a separate OS process is a one-line change
-(pass StdioServerParameters pointing at `python mcp_server.py` instead) -
+(pass StdioServerParameters pointing at `python -m failsafe.mcp_server` instead) -
 kept in-process here to remove subprocess-management risk from a short
 build window; call this out explicitly in the pitch video.
 """
@@ -36,19 +36,27 @@ build window; call this out explicitly in the pitch video.
 import argparse
 import asyncio
 import json
+import os
+import subprocess
+import tempfile
+from pathlib import Path
 
 from mcp import Client
 
 from failsafe.audit_log import AuditLogger
 from failsafe.decline_codes import RecoveryAction
 from failsafe.gate import Gate
+from failsafe.mcp_server import seed_tool_level_guard
 from failsafe.mcp_server import server as mcp_server
+from failsafe.mcp_tool_errors import render_tool_error_lines
 from failsafe.ollama_client import DEFAULT_SITUATION
 from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
 from failsafe.recovery_pipeline import (
     count_prior_attempts,
     process_record,
+    render_corrected_override_line,
     render_decline_code_table,
+    reset_circuit_breaker,
 )
 
 DATA_PATH = DATA_DIR / "halted_subscriptions.json"
@@ -101,21 +109,94 @@ async def process_one(
     )
 
 
+def _tool_keys_from_checkpoint(results: list[dict]) -> set[tuple[str, str]]:
+    """(record_id, tool_name) pairs for money-moving tools a checkpointed
+    run already executed - the keys mcp_server's tool-level guard uses."""
+    keys = set()
+    for r in results:
+        if not r.get("gate_executed"):
+            continue
+        try:
+            tool = ACTION_TO_TOOL[RecoveryAction(r.get("final_action"))]
+        except (ValueError, KeyError):
+            continue
+        if tool != "flag_for_manual_review":
+            keys.add((r["subscription_id"], tool))
+    return keys
+
+
 def _load_checkpoint() -> list[dict]:
     if not CHECKPOINT_PATH.exists():
         return []
+    results = []
     with CHECKPOINT_PATH.open(encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                print(f"[checkpoint] warning: skipping corrupted line in {CHECKPOINT_PATH}")
+                continue
+            # A record short-circuited by an open LLM circuit breaker was never
+            # evaluated by the gate - don't treat it as done, retry it on resume.
+            if entry.get("circuit_open"):
+                continue
+            results.append(entry)
+    return results
 
 
 def _append_checkpoint(result: dict):
     CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with CHECKPOINT_PATH.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(result, default=str) + "\n")
+    line = json.dumps(result, default=str) + "\n"
+    if not CHECKPOINT_PATH.exists():
+        with CHECKPOINT_PATH.open("w", encoding="utf-8") as f:
+            f.write(line)
+            f.flush()
+            os.fsync(f.fileno())
+        return
+    fd, tmp_path = tempfile.mkstemp(dir=str(CHECKPOINT_PATH.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+            with CHECKPOINT_PATH.open(encoding="utf-8") as src:
+                tmp.write(src.read())
+            tmp.write(line)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp_path, CHECKPOINT_PATH)
+        with CHECKPOINT_PATH.open("a", encoding="utf-8") as f:
+            os.fsync(f.fileno())
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        raise
+
+
+def _check_health(skip: bool = False):
+    if skip:
+        return
+    from failsafe.ollama_client import healthcheck
+
+    ok, msg = healthcheck()
+    if not ok:
+        raise SystemExit(f"Healthcheck failed: {msg} (use --skip-healthcheck to bypass)")
+    print(f"[healthcheck] {msg}")
+    from failsafe.razorpay_client import SIMULATE
+
+    if not SIMULATE:
+        try:
+            subprocess.run(["docker", "--version"], capture_output=True, timeout=5, check=True)
+            print("[healthcheck] docker reachable")
+        except Exception as e:
+            raise SystemExit(
+                f"Healthcheck failed: docker not reachable but real Razorpay keys are set (SIMULATE=false): {e} (use --skip-healthcheck to bypass)"
+            )
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run the FailSafe subscription recovery pipeline.")
+    parser = argparse.ArgumentParser(description="Run the subscription recovery agent pipeline.")
     parser.add_argument(
         "--inject-failure",
         choices=[
@@ -145,12 +226,27 @@ def parse_args():
             "model normally."
         ),
     )
+    parser.add_argument(
+        "--skip-healthcheck", action="store_true", help="Skip Ollama/docker health checks"
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Bounded concurrency (default 1 sequential); use e.g. 4 for asyncio.gather with Semaphore(4)",
+    )
     return parser.parse_args()
 
 
-async def run(inject_failure: str | None = None):
+async def run(
+    inject_failure: str | None = None, skip_healthcheck: bool = False, concurrency: int = 1
+):
+    _check_health(skip=skip_healthcheck)
+    # The LLM-fallback circuit breaker is module-global state in
+    # recovery_pipeline; a fresh run must not inherit a tripped breaker.
+    reset_circuit_breaker()
     if not DATA_PATH.exists():
-        raise SystemExit("No data found. Run `python src/generate_data.py` first.")
+        raise SystemExit("No data found. Run `python -m failsafe.generate_data` first.")
 
     subscriptions = json.loads(DATA_PATH.read_text(encoding="utf-8"))
     gate = Gate()
@@ -174,6 +270,10 @@ async def run(inject_failure: str | None = None):
         (r["subscription_id"], r["final_action"]) for r in results if r["gate_executed"]
     }
     gate.seed_from_checkpoint(already_spent, already_seen_keys)
+    # The MCP tool-level guard is process-global: reset it so nothing leaks
+    # in from a previous in-process run, then restore it from the checkpoint
+    # exactly like the gate above.
+    seed_tool_level_guard(already_spent, _tool_keys_from_checkpoint(results))
 
     # Cross-run history for the attempt-cap stopping rule (gate.py
     # MAX_ATTEMPTS_PER_SUBSCRIPTION): read once, up front, before this run
@@ -190,50 +290,91 @@ async def run(inject_failure: str | None = None):
     print(f"{len(done_ids)} already done (checkpoint), {len(remaining)} remaining")
 
     async with Client(mcp_server) as client:
-        for i, sub in enumerate(remaining):
-            # Only the first record in a run can be injected - keeps the
-            # rest of the batch's numbers meaningful while still proving
-            # the failure path live.
-            inject = inject_failure if (inject_failure and i == 0) else None
-            if inject:
-                print(f"[demo] injecting '{inject}' failure for {sub['subscription_id']}")
-            try:
-                prior_attempts = _count_prior_attempts(audit_history, sub["subscription_id"])
-                result = await process_one(
-                    client,
-                    gate,
-                    audit,
-                    sub,
-                    inject_failure=inject,
-                    prior_attempt_count=prior_attempts,
+        if concurrency > 1:
+            sem = asyncio.Semaphore(concurrency)
+
+            async def _one(idx_sub):
+                idx, sub = idx_sub
+                inject = inject_failure if (inject_failure and idx == 0) else None
+                if inject:
+                    print(f"[demo] injecting '{inject}' failure for {sub['subscription_id']}")
+                try:
+                    prior_attempts = _count_prior_attempts(audit_history, sub["subscription_id"])
+                    async with sem:
+                        return await process_one(
+                            client,
+                            gate,
+                            audit,
+                            sub,
+                            inject_failure=inject,
+                            prior_attempt_count=prior_attempts,
+                        )
+                except Exception as e:
+                    audit.log(
+                        "record_processing_error",
+                        subscription_id=sub["subscription_id"],
+                        error=str(e),
+                    )
+                    return {
+                        "subscription_id": sub["subscription_id"],
+                        "amount_paise": sub["amount_paise"],
+                        "decline_code": sub["decline_code"],
+                        "diagnosed_decline_code": None,
+                        "diagnosis_matched_ground_truth": None,
+                        "final_action": "no_action_unrecoverable",
+                        "gate_executed": False,
+                        "llm_matched_policy": False,
+                        "llm_proposed": False,
+                        "simulated_customer_response": False,
+                        "tool_result": None,
+                    }
+
+            batch_results = await asyncio.gather(*(_one(pair) for pair in enumerate(remaining)))
+            for sub, result in zip(remaining, batch_results):
+                results.append(result)
+                _append_checkpoint(result)
+                print(
+                    f"{sub['subscription_id']}  {sub['decline_code']:32s} -> {result['final_action']}"
                 )
-            except Exception as e:
-                # A single record's unexpected failure must not take down a
-                # 150-record batch run - log it and keep going. Discovered
-                # the hard way: an unhandled Ollama 500 crashed the entire
-                # first full run. See BUILD_LOG.md.
-                audit.log(
-                    "record_processing_error",
-                    subscription_id=sub["subscription_id"],
-                    error=str(e),
+        else:
+            for i, sub in enumerate(remaining):
+                inject = inject_failure if (inject_failure and i == 0) else None
+                if inject:
+                    print(f"[demo] injecting '{inject}' failure for {sub['subscription_id']}")
+                try:
+                    prior_attempts = _count_prior_attempts(audit_history, sub["subscription_id"])
+                    result = await process_one(
+                        client,
+                        gate,
+                        audit,
+                        sub,
+                        inject_failure=inject,
+                        prior_attempt_count=prior_attempts,
+                    )
+                except Exception as e:
+                    audit.log(
+                        "record_processing_error",
+                        subscription_id=sub["subscription_id"],
+                        error=str(e),
+                    )
+                    result = {
+                        "subscription_id": sub["subscription_id"],
+                        "amount_paise": sub["amount_paise"],
+                        "decline_code": sub["decline_code"],
+                        "diagnosed_decline_code": None,
+                        "diagnosis_matched_ground_truth": None,
+                        "final_action": "no_action_unrecoverable",
+                        "gate_executed": False,
+                        "llm_matched_policy": False,
+                        "llm_proposed": False,
+                        "simulated_customer_response": False,
+                        "tool_result": None,
+                    }
+                results.append(result)
+                _append_checkpoint(result)
+                print(
+                    f"{sub['subscription_id']}  {sub['decline_code']:32s} -> {result['final_action']}"
                 )
-                result = {
-                    "subscription_id": sub["subscription_id"],
-                    "amount_paise": sub["amount_paise"],
-                    "decline_code": sub["decline_code"],
-                    "diagnosed_decline_code": None,
-                    "diagnosis_matched_ground_truth": None,
-                    "final_action": "no_action_unrecoverable",
-                    "gate_executed": False,
-                    "llm_matched_policy": False,
-                    "simulated_customer_response": False,
-                    "tool_result": None,
-                }
-            results.append(result)
-            _append_checkpoint(result)
-            print(
-                f"{sub['subscription_id']}  {sub['decline_code']:32s} -> {result['final_action']}"
-            )
 
     audit.log("run_finished", total_processed=len(results))
     write_results(results)
@@ -252,7 +393,8 @@ def write_results(results: list[dict]):
     recovered = [r for r in acted_on if r["simulated_customer_response"]]
     recovered_paise = sum(r["amount_paise"] for r in recovered)
 
-    hard_blocked = [r for r in results if not r["gate_executed"]]
+    # A tool error is not a gate block; it gets its own line below.
+    hard_blocked = [r for r in results if not r["gate_executed"] and not r.get("tool_error")]
     overridden = [r for r in results if not r["llm_matched_policy"]]
     fraud_refused = [r for r in results if r["final_action"] == "no_action_fraud"]
     unrecoverable = [r for r in results if r["final_action"] == "no_action_unrecoverable"]
@@ -274,7 +416,9 @@ def write_results(results: list[dict]):
         f"- LLM proposals the gate had to override (policy mismatch): "
         f"**{len(overridden)}/{len(results)}** "
         f"({len(overridden) / len(results) * 100:.0f}% - the gate, not the model, is what makes this safe)",
+        render_corrected_override_line(results),
         f"- Hard-blocked by gate (spending cap / duplicate): **{len(hard_blocked)}**",
+        *render_tool_error_lines(results),
         f"- Correctly refused as fraud-flagged (never retried): **{len(fraud_refused)}**",
         f"- Correctly identified as unrecoverable (no action taken): **{len(unrecoverable)}**",
         "",
@@ -285,6 +429,16 @@ def write_results(results: list[dict]):
     print(f"\nWrote {RESULTS_PATH}")
 
 
-if __name__ == "__main__":
+def main() -> None:
     cli_args = parse_args()
-    asyncio.run(run(inject_failure=cli_args.inject_failure))
+    asyncio.run(
+        run(
+            inject_failure=cli_args.inject_failure,
+            skip_healthcheck=cli_args.skip_healthcheck,
+            concurrency=cli_args.concurrency,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()
