@@ -17,8 +17,13 @@ from failsafe.gate import MAX_ACTION_AMOUNT_PAISE
 
 @pytest.fixture
 def real_mode():
+    """Pretend real rzp_test_ keys are configured; the official MCP call is a stub."""
     official = AsyncMock(return_value={"id": "plink_1"})
-    with mcp_server.simulate_mode(False), patch.object(mcp_server, "call_official_tool", official):
+    with (
+        patch("failsafe.razorpay_client.keys_configured", return_value=True),
+        mcp_server.simulate_mode(False),
+        patch.object(mcp_server, "call_official_tool", official),
+    ):
         yield official
 
 
@@ -30,7 +35,7 @@ def test_payment_link_forwards_to_official_server_with_notes(real_mode):
             "amount": 29900,
             "currency": "INR",
             "description": "fix your card",
-            "notes": {"subscription_id": "sub_r1", "source": "recovery-agent"},
+            "notes": {"subscription_id": "sub_r1", "source": "failsafe-agent"},
         },
     )
     assert out == {"id": "plink_1", "simulated": False, "via_official_razorpay_mcp_server": True}
@@ -41,6 +46,7 @@ def test_retry_order_forwards_create_order(real_mode):
     name, payload = real_mode.await_args.args
     assert name == "create_order"
     assert payload["amount"] == 19900 and payload["notes"]["subscription_id"] == "sub_r2"
+    assert payload["notes"]["source"] == "failsafe-agent"
     assert out["simulated"] is False
 
 
@@ -90,3 +96,7 @@ def test_flag_for_manual_review_moves_no_money():
     out = mcp_server.flag_for_manual_review("sub_f", "fraud")
     assert out == {"subscription_id": "sub_f", "flagged": True, "reason": "fraud"}
     assert mcp_server._tool_run_total_paise == 0
+
+
+def test_server_carries_the_failsafe_brand_name():
+    assert mcp_server.server.name == "failsafe-recovery-agent"

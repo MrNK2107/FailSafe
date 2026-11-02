@@ -52,8 +52,8 @@ but it is a genuine behavior difference from running the four scripts
 separately, not an oversight.
 
 SIMULATE is forced True for this script's run() via
-`mcp_server.simulate_mode()` (sets `mcp_server.SIMULATE` plus
-`mcp_server._rp.simulate`; run(force_simulate=False) opts out), as checkout_abandonment_
+`mcp_server.simulate_mode()` (delegates to the single dynamic switch
+razorpay_client.force_simulate(); run(force_simulate=False) opts out), as checkout_abandonment_
 agent.py/receivables_agent.py do and for the same disclosed
 reason: this repo's own `.env` already has real `rzp_test_` keys
 configured, and the real test-mode account has already exhausted its
@@ -229,9 +229,9 @@ def _check_health(skip: bool = False):
     if not ok:
         raise SystemExit(f"Healthcheck failed: {msg} (use --skip-healthcheck to bypass)")
     print(f"[healthcheck] {msg}")
-    from failsafe.razorpay_client import SIMULATE
+    from failsafe.razorpay_client import simulate_mode
 
-    if not SIMULATE:
+    if not simulate_mode():
         try:
             subprocess.run(["docker", "--version"], capture_output=True, timeout=5, check=True)
             print("[healthcheck] docker reachable")

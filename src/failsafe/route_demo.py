@@ -226,7 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     audit_path: Path = args.audit_log or AUDIT_PATH
     results_path: Path = args.results or RESULTS_PATH
 
-    if args.live and razorpay_client.SIMULATE:
+    if args.live and not razorpay_client.keys_configured():
         print(
             "error: --live needs Razorpay test keys (RAZORPAY_KEY_ID starting with rzp_test_ "
             "and RAZORPAY_KEY_SECRET) in the environment or .env, and none are configured. "

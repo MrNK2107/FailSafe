@@ -260,22 +260,20 @@ def test_per_record_crash_degrades_to_human_review_and_batch_continues(dom):
 
 def test_force_simulate_restores_global_switches(dom):
     _write_data(dom, [dom["make"]("r1")])
-    before = (mcp_server.SIMULATE, mcp_server._rp.simulate)
-    with (
-        patch.object(mcp_server, "SIMULATE", False),
-        patch.object(mcp_server._rp, "simulate", False),
-    ):
+    before = (mcp_server.is_simulated(), mcp_server._rp.simulate)
+    # Pretend real keys are configured, so "simulated" can only come from the force.
+    with patch("failsafe.razorpay_client.keys_configured", return_value=True):
         seen = {}
 
         def _spy(**kw):
-            seen["sim"] = (mcp_server.SIMULATE, mcp_server._rp.simulate)
+            seen["sim"] = (mcp_server.is_simulated(), mcp_server._rp.simulate)
             return _diag(dom, dom["right"])
 
         with patch.object(dom["module"], dom["diagnose_fn"], side_effect=_spy):
             asyncio.run(dom["module"].run())
         assert seen["sim"] == (True, True)
-        assert (mcp_server.SIMULATE, mcp_server._rp.simulate) == (False, False)
-    assert (mcp_server.SIMULATE, mcp_server._rp.simulate) == before
+        assert (mcp_server.is_simulated(), mcp_server._rp.simulate) == (False, False)
+    assert (mcp_server.is_simulated(), mcp_server._rp.simulate) == before
 
 
 def test_extract_tool_text_handles_empty_and_textless_content(dom):

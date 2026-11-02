@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from failsafe import agent_onetime, mcp_server, recovery_pipeline
+from failsafe import agent_onetime, recovery_pipeline
 
 
 def _pay(i, code="insufficient_funds", amount=50000):
@@ -35,8 +35,8 @@ def iso(tmp_path):
     }
     patches = [patch.object(agent_onetime, k, v) for k, v in paths.items()]
     patches += [
-        patch.object(mcp_server, "SIMULATE", True),
-        patch.object(mcp_server._rp, "simulate", True),
+        # the single simulate switch (razorpay_client.force_simulate), patcher-style
+        patch("failsafe.razorpay_client._forced", [True]),
     ]
     for p in patches:
         p.start()

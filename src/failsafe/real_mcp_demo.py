@@ -29,11 +29,11 @@ from pathlib import Path
 
 from mcp import Client
 
+from failsafe import razorpay_client
 from failsafe.decline_codes import RecoveryAction, get_decline_code
 from failsafe.gate import Gate
 from failsafe.mcp_server import server as mcp_server
 from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
-from failsafe.razorpay_client import SIMULATE
 
 DATA_PATH = DATA_DIR / "halted_subscriptions.json"
 LOG_PATH = LOGS_DIR / "real_mcp_server_run.jsonl"
@@ -70,7 +70,10 @@ def _log(entries: list[dict], **fields):
 
 
 async def run(n: int = 5):
-    if SIMULATE:
+    # Asks the live switch's key check (not an import-time snapshot). It is
+    # keys_configured(), not simulate_mode(): a caller may force the in-process
+    # tools into simulate while this demo still requires real keys to exist.
+    if not razorpay_client.keys_configured():
         raise SystemExit(
             "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET are not set to real rzp_test_ "
             "keys in .env - this script requires them (the official MCP server "

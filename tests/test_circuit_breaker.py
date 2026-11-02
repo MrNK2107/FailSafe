@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from failsafe import agent, mcp_server, recovery_pipeline
+from failsafe import agent, recovery_pipeline
 from failsafe.recovery_pipeline import CIRCUIT_THRESHOLD
 
 
@@ -37,8 +37,8 @@ def iso(tmp_path):
     }
     patches = [patch.object(agent, k, v) for k, v in paths.items()]
     patches += [
-        patch.object(mcp_server, "SIMULATE", True),
-        patch.object(mcp_server._rp, "simulate", True),
+        # the single simulate switch (razorpay_client.force_simulate), patcher-style
+        patch("failsafe.razorpay_client._forced", [True]),
     ]
     for p in patches:
         p.start()

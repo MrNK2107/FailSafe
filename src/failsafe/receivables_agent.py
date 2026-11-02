@@ -51,9 +51,8 @@ for agent_onetime.py's `payment_id` records and
 checkout_abandonment_agent.py's own `cart_id` records, not a new pattern.
 
 SIMULATE is forced True for THIS script's run(), for the exact same
-reason, via `mcp_server.simulate_mode()` (which sets both
-`mcp_server.SIMULATE` and the import-time `mcp_server._rp.simulate`;
-run(force_simulate=False) opts out) as diagnosis_live_demo.py/
+reason, via `mcp_server.simulate_mode()` (which delegates to the single dynamic
+switch razorpay_client.force_simulate(); run(force_simulate=False) opts out) as diagnosis_live_demo.py/
 detection_live_demo.py/checkout_abandonment_agent.py already needed and
 documented: this repo's own `.env` already has real `rzp_test_` keys
 configured, and this project's own real test-mode account has already
@@ -61,7 +60,7 @@ exhausted its payment-link quota - so a fresh domain's live demo must not
 route through the real official MCP server or consume scarce real-account
 quota for a script whose entire purpose is measuring DIAGNOSIS behavior.
 Direct programmatic use of `process_one()` (e.g. from a test) is
-unaffected and still respects whatever `.env`/SIMULATE state is active at
+unaffected and still respects whatever `.env`/simulate_mode() state is active at
 call time.
 """
 

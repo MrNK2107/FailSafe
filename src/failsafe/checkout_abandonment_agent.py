@@ -63,12 +63,12 @@ disclosure) - so letting a fresh domain's live demo route through the
 real official MCP server here would either fail outright or consume
 scarce real-account quota for a script whose entire purpose is measuring
 DIAGNOSIS behavior, not creating real Razorpay objects. Same reasoning,
-as `diagnosis_live_demo.py`/`detection_live_demo.py`. Both switches
-(`mcp_server.SIMULATE` and the import-time `mcp_server._rp.simulate`) are
-set together by `mcp_server.simulate_mode()`; run(force_simulate=False)
+as `diagnosis_live_demo.py`/`detection_live_demo.py`. It goes through
+`mcp_server.simulate_mode()`, which delegates to the single dynamic switch
+`razorpay_client.force_simulate()`/`simulate_mode()`; run(force_simulate=False)
 opts out explicitly (no runtime mock patching). Direct
 programmatic use of `process_one()` (e.g. from a test) is unaffected and
-still respects whatever `.env`/SIMULATE state is active at call time.
+still respects whatever `.env`/simulate_mode() state is active at call time.
 """
 
 import argparse

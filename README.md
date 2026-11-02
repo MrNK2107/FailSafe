@@ -175,7 +175,7 @@ Paraphrase robustness: 16/16 clean paraphrases pass; 15/16 adversarial (the one 
 - The console has no auth (it binds to localhost by default); the static policy dashboard is read-only, and policy edits go through git for auditability.
 - "Compliant escalation" means bounded and attempt-capped. It is not integrated with TRAI/DND or RBI e-mandate.
 - 150 records = 15 unique decline scenarios at `temperature: 0`; diversity comes from the paraphrase and adversarial suites.
-- Audit logs carry the original `source=recovery-agent` Razorpay notes tag.
+- Live Razorpay calls are tagged `notes.source=failsafe-agent` (MCP server `failsafe-recovery-agent`); committed audit logs from before the rename carry the original `source=recovery-agent` tag.
 
 The full list is in [docs/PRODUCT.md §8](docs/PRODUCT.md#8-what-is-not-true-yet).
 

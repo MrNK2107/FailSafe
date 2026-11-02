@@ -169,14 +169,34 @@ The Phase 4 branches were cut before the Phase 3 rename and had re-branded
 the product surface as "Recoup". On integration the Phase 3 decision stands:
 the product, package, repo and CLI are all **FailSafe** / `failsafe`
 (`python -m failsafe ...`), and the Recoup name was removed from the README,
-docs, generated pages, console, brand assets and screenshots. MCP server name
-and Razorpay `notes.source` tags in the committed evidence logs are unchanged
-(`recovery-agent`).
+docs, generated pages, console, brand assets and screenshots. The live code
+carries the Phase 3 brand tags: MCP server name `failsafe-recovery-agent` and
+Razorpay `notes.source` = `failsafe-agent` (`failsafe-agent-route-demo` for
+Route). Committed audit/evidence logs written before the rename still carry
+`recovery-agent`; they are historical records and are not rewritten.
 
-### Possible follow-up
+### Simulate switch (post-merge fix, 2026-11-03)
 
-- Port Phase 3's lazy `razorpay_client` (SDK built on first use, one dynamic
-  `simulate_mode()` knob with `force_simulate()`) onto this tree; it was not
-  carried over because ~15 Phase 4 tests patch `mcp_server.SIMULATE` /
-  `_rp.simulate` / `razorpay_client._client`, which `mcp_server.simulate_mode()`
-  currently sets together.
+The merge (275bfe9) had kept the Phase 4 import-time `SIMULATE` snapshot in
+`razorpay_client`, `mcp_server` and `razorpay_mcp_client`, plus an eager SDK
+client. Two consequences: with no keys, `with mcp_server.simulate_mode(False):
+_rp.create_retry_order(...)` raised `AttributeError` (`_client` was `None`),
+and the health checks in `agent` / `integrated_pipeline`, `route_demo --live`
+and `real_mcp_demo` read a stale flag. Phase 3's design is restored:
+
+- `razorpay_client.simulate_mode()` is the one dynamic switch (forced, or no
+  real keys); `force_simulate(enabled=True)` sets it for a block and restores
+  the previous value; the SDK is built lazily on first real call.
+- `keys_configured()` treats `.env.example` placeholders (`xxxx`) as unset,
+  the same rule as `verify_setup.py`, and `.env.example` ships the key lines
+  commented out, so `cp .env.example .env` stays in SIMULATE mode.
+- `mcp_server.simulate_mode()` delegates to `force_simulate()`; the tools,
+  `_rp.simulate` (now a property) and every health check ask the switch.
+  `simulate_mode(False)` only lifts a force: without real keys it still
+  simulates, so nothing can reach the SDK with empty credentials.
+- The ~15 Phase 4 tests that patched `mcp_server.SIMULATE` / `_rp.simulate` /
+  `_client` now use `mcp_server.simulate_mode(True)`, patch
+  `razorpay_client.keys_configured`, or set `client._sdk`. A test-wide
+  autouse fixture clears key values and any force, so a local `.env` with
+  real keys can never leak into the suite. Regression tests cover both
+  failure scenarios (`tests/test_simulate_mode.py`).

@@ -22,7 +22,6 @@ are commonly present in a local .env.
 import asyncio
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from mcp import Client
@@ -66,8 +65,7 @@ def _run_two_through_one_shared_gate(sub_a: dict, sub_b: dict):
         # file's own docstring promise ("a test run must never place a
         # real API call as a side effect") is actually true.
         with (
-            patch.object(mcp_server, "SIMULATE", True),
-            patch.object(mcp_server._rp, "simulate", True),
+            mcp_server.simulate_mode(True),
         ):
             first, second = asyncio.run(_run())
         events = audit.read_all()

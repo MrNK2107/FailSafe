@@ -32,9 +32,7 @@ def isolated_paths(monkeypatch, tmp_path):
 def keys_configured(monkeypatch):
     """Pretend real rzp_test_ keys are configured (without any keys): every
     switch that decides simulate-vs-real says 'real'."""
-    monkeypatch.setattr(razorpay_client, "SIMULATE", False)
-    monkeypatch.setattr(mcp_server, "SIMULATE", False)
-    monkeypatch.setattr(mcp_server._rp, "simulate", False)
+    monkeypatch.setattr(razorpay_client, "keys_configured", lambda: True)
 
 
 @pytest.fixture
@@ -64,7 +62,7 @@ def test_default_forces_simulate_even_with_keys_configured(keys_configured, rout
 
     assert route_calls == [True, True, True, True]  # 5 recoveries, 1 blocked by the cap
     # the switch is restored afterwards, not left forced on
-    assert mcp_server._rp.simulate is False and mcp_server.SIMULATE is False
+    assert mcp_server._rp.simulate is False and mcp_server.is_simulated() is False
     out = capsys.readouterr().out
     assert "Mode: SIMULATE (no Razorpay calls)" in out
 
@@ -75,7 +73,7 @@ def test_explicit_simulate_flag_is_the_same_as_default(keys_configured, route_ca
 
 
 def test_live_refused_when_no_test_keys_configured(monkeypatch, route_calls, capsys):
-    monkeypatch.setattr(razorpay_client, "SIMULATE", True)
+    monkeypatch.setattr(razorpay_client, "keys_configured", lambda: False)
 
     assert route_demo.main(["--live"]) == 2
 

@@ -80,8 +80,7 @@ def _run(record: dict, raw_signal_field: str | None, diagnosis_return=None, inje
 
     try:
         with (
-            patch.object(mcp_server, "SIMULATE", True),
-            patch.object(mcp_server._rp, "simulate", True),
+            mcp_server.simulate_mode(True),
         ):
             if diagnosis_return is not None:
                 with patch(

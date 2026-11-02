@@ -39,8 +39,7 @@ def _run(invoice: dict, diagnosis_return=None, inject_failure=None):
 
     try:
         with (
-            patch.object(mcp_server, "SIMULATE", True),
-            patch.object(mcp_server._rp, "simulate", True),
+            mcp_server.simulate_mode(True),
         ):
             if diagnosis_return is not None:
                 with patch(

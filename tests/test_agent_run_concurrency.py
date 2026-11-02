@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from failsafe import agent, base_gate, mcp_server, recovery_pipeline
+from failsafe import agent, base_gate, recovery_pipeline
 
 
 def _sub(i, code="insufficient_funds", amount=29900):
@@ -42,8 +42,8 @@ def iso(tmp_path):
     }
     patches = [patch.object(agent, k, v) for k, v in paths.items()]
     patches += [
-        patch.object(mcp_server, "SIMULATE", True),
-        patch.object(mcp_server._rp, "simulate", True),
+        # the single simulate switch (razorpay_client.force_simulate), patcher-style
+        patch("failsafe.razorpay_client._forced", [True]),
     ]
     for p in patches:
         p.start()
@@ -178,7 +178,7 @@ class TestCheckHealth:
     def test_simulate_mode_does_not_need_docker(self):
         with (
             patch("failsafe.ollama_client.healthcheck", return_value=(True, "ok")),
-            patch("failsafe.razorpay_client.SIMULATE", True),
+            patch("failsafe.razorpay_client.keys_configured", return_value=False),
             patch.object(agent.subprocess, "run") as run,
         ):
             agent._check_health()
@@ -187,7 +187,7 @@ class TestCheckHealth:
     def test_real_keys_require_docker(self):
         with (
             patch("failsafe.ollama_client.healthcheck", return_value=(True, "ok")),
-            patch("failsafe.razorpay_client.SIMULATE", False),
+            patch("failsafe.razorpay_client.keys_configured", return_value=True),
             patch.object(agent.subprocess, "run", side_effect=FileNotFoundError("docker")),
         ):
             with pytest.raises(SystemExit, match="docker not reachable"):
@@ -196,7 +196,7 @@ class TestCheckHealth:
     def test_real_keys_with_docker_pass(self, capsys):
         with (
             patch("failsafe.ollama_client.healthcheck", return_value=(True, "ok")),
-            patch("failsafe.razorpay_client.SIMULATE", False),
+            patch("failsafe.razorpay_client.keys_configured", return_value=True),
             patch.object(agent.subprocess, "run") as run,
         ):
             agent._check_health()

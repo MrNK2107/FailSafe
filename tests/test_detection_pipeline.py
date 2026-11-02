@@ -97,8 +97,7 @@ def _run(
     )
     try:
         with (
-            patch.object(mcp_server, "SIMULATE", True),
-            patch.object(mcp_server._rp, "simulate", True),
+            mcp_server.simulate_mode(True),
             detect_patch,
             diagnose_patch,
         ):
@@ -194,8 +193,7 @@ def test_correct_needs_attention_lets_an_at_risk_record_proceed_normally():
 
     try:
         with (
-            patch.object(mcp_server, "SIMULATE", True),
-            patch.object(mcp_server._rp, "simulate", True),
+            mcp_server.simulate_mode(True),
             patch(
                 "failsafe.recovery_pipeline.detect_at_risk",
                 return_value={
@@ -366,8 +364,7 @@ def test_injected_detection_parse_failure_exercises_the_real_failure_path():
 
     try:
         with (
-            patch.object(mcp_server, "SIMULATE", True),
-            patch.object(mcp_server._rp, "simulate", True),
+            mcp_server.simulate_mode(True),
             patch(
                 "failsafe.recovery_pipeline.diagnose_decline_code",
                 return_value={"decline_code": "insufficient_funds", "reasoning": "matches"},

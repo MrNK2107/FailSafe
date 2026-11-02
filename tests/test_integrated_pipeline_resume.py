@@ -284,7 +284,7 @@ def test_healthcheck_failure_aborts(env):
 def test_healthcheck_real_keys_require_docker():
     with (
         patch("failsafe.ollama_client.healthcheck", return_value=(True, "ok")),
-        patch("failsafe.razorpay_client.SIMULATE", False),
+        patch("failsafe.razorpay_client.keys_configured", return_value=True),
         patch.object(ip.subprocess, "run", side_effect=OSError("no docker")),
     ):
         with pytest.raises(SystemExit, match="docker not reachable"):

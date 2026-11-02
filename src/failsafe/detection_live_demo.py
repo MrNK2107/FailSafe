@@ -42,11 +42,11 @@ convention (logs/pre_escalation_rules/, logs/pre_accuracy_fix/, and
 diagnosis_live_demo.py's own separate-file choice all preserve prior runs
 rather than mutate or overwrite them).
 
-SIMULATE is forced True here via `mcp_server.simulate_mode()`, which sets
-BOTH `mcp_server.SIMULATE` and `mcp_server._rp.simulate` - diagnosis_live_demo.py's docstring documents in
-detail why patching only the first is insufficient when real `rzp_test_`
-keys are present in `.env` (mcp_server._rp is constructed once at import
-time and branches on its OWN `self.simulate`, not the module-level name).
+SIMULATE is forced True here via `mcp_server.simulate_mode()`, which
+delegates to the single dynamic switch in razorpay_client
+(`force_simulate()` / `simulate_mode()`). diagnosis_live_demo.py's docstring
+records why there must be only one switch: the old two-copy design once let
+a "forced" run make a real API call.
 
 Usage: python -m failsafe.detection_live_demo [N]   (default: however many records
 generate_detection_pool.py wrote, currently 30)

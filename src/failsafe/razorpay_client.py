@@ -6,10 +6,23 @@ If RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET aren't set, everything runs in
 SIMULATE mode: same interface, fake-but-realistic responses, so the whole
 pipeline is runnable before you've created a Razorpay account. Swap in real
 rzp_test_ keys (free, no KYC) any time and nothing else changes.
+
+Design note (WP3 import-hygiene overhaul): this module is deliberately
+import-safe. Reading .env and the key strings at import is fine (values
+only, no connections), but the SDK client is constructed LAZILY on first
+real use - importing this module never touches the network or builds a
+razorpay.Client. There is exactly ONE simulate knob: simulate_mode(),
+which is dynamic (call it any time - it always reflects current state).
+Demo scripts and tests force it with force_simulate(); the old pattern of
+patching a module-level SIMULATE flag AND a per-instance simulate
+attribute (the "two-patch dance") is gone because there are no shadow
+copies left to drift apart.
 """
 
 import os
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import razorpay
 from dotenv import load_dotenv
@@ -18,12 +31,62 @@ load_dotenv()
 
 KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
 KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
-SIMULATE = not (KEY_ID.startswith("rzp_test_") and KEY_SECRET)
 
-if not SIMULATE:
-    _client = razorpay.Client(auth=(KEY_ID, KEY_SECRET))
-else:
-    _client = None
+# Forced-simulate override. A list so force_simulate() can mutate it without
+# any consumer ever holding a stale copy of the value.
+_forced = [False]
+
+
+# Placeholder values shipped in .env.example (rzp_test_xxxx..., xxxx...).
+# A copied-but-unedited .env must NOT count as "keys configured" - it would
+# switch SIMULATE off and send real SDK/MCP calls with fake credentials. Same
+# rule verify_setup.py applies: any "xxxx" run in either value is a placeholder.
+_PLACEHOLDER_MARK = "xxxx"
+
+
+def _is_placeholder(value: str) -> bool:
+    return _PLACEHOLDER_MARK in value.lower()
+
+
+def keys_configured() -> bool:
+    """True when real (non-placeholder) rzp_test_ keys are in the environment."""
+    return (
+        KEY_ID.startswith("rzp_test_")
+        and bool(KEY_SECRET)
+        and not _is_placeholder(KEY_ID)
+        and not _is_placeholder(KEY_SECRET)
+    )
+
+
+def simulate_mode() -> bool:
+    """The single source of truth for whether Razorpay calls are simulated.
+
+    Dynamic by design: demo scripts can flip it on for one run via
+    force_simulate() and every caller that asks afterwards sees the same
+    answer, unlike the old import-time snapshot copies.
+    """
+    return _forced[0] or not keys_configured()
+
+
+@contextmanager
+def force_simulate(enabled: bool = True) -> Iterator[None]:
+    """Force simulate mode inside the block, regardless of local .env.
+
+    Used by demo scripts that exist to measure diagnosis/detection behavior
+    (not to create real Razorpay objects) and by tests that must never make
+    a live call as a side effect. Always restores the PREVIOUS value on exit,
+    even on error, so nested blocks compose.
+
+    force_simulate(False) lifts any outer force for the block, so the answer
+    falls back to keys_configured(). It can never switch real mode on without
+    real keys: there is no way to reach the SDK with empty/placeholder keys.
+    """
+    previous = _forced[0]
+    _forced[0] = enabled
+    try:
+        yield
+    finally:
+        _forced[0] = previous
 
 
 class RazorpayClient:
@@ -35,7 +98,19 @@ class RazorpayClient:
                 "Refusing to run: a live-mode key was detected. This project "
                 "is test-mode only, always."
             )
-        self.simulate = SIMULATE
+        self._sdk = None  # constructed lazily; never at import time
+
+    @property
+    def simulate(self) -> bool:
+        """Reads the one shared knob - always current, never a stale copy."""
+        return simulate_mode()
+
+    @property
+    def sdk(self):
+        """The real SDK client, built on first use (never at import)."""
+        if self._sdk is None:
+            self._sdk = razorpay.Client(auth=(KEY_ID, KEY_SECRET))
+        return self._sdk
 
     def create_payment_link(
         self, amount_paise: int, description: str, subscription_id: str
@@ -49,12 +124,12 @@ class RazorpayClient:
                 "simulated": True,
                 "subscription_id": subscription_id,
             }
-        link = _client.payment_link.create(
+        link = self.sdk.payment_link.create(
             {
                 "amount": amount_paise,
                 "currency": "INR",
                 "description": description,
-                "notes": {"subscription_id": subscription_id, "source": "recovery-agent"},
+                "notes": {"subscription_id": subscription_id, "source": "failsafe-agent"},
             }
         )
         link["simulated"] = False
@@ -98,14 +173,14 @@ class RazorpayClient:
                     }
                 ],
             }
-        order = _client.order.create(
+        order = self.sdk.order.create(
             {
                 "amount": amount_paise,
                 "currency": "INR",
                 "receipt": f"route_{subscription_id}",
                 "notes": {
                     "subscription_id": subscription_id,
-                    "source": "recovery-agent-route-demo",
+                    "source": "failsafe-agent-route-demo",
                 },
                 "transfers": [
                     {
@@ -130,12 +205,12 @@ class RazorpayClient:
                 "simulated": True,
                 "subscription_id": subscription_id,
             }
-        order = _client.order.create(
+        order = self.sdk.order.create(
             {
                 "amount": amount_paise,
                 "currency": "INR",
                 "receipt": f"retry_{subscription_id}",
-                "notes": {"subscription_id": subscription_id, "source": "recovery-agent"},
+                "notes": {"subscription_id": subscription_id, "source": "failsafe-agent"},
             }
         )
         order["simulated"] = False

@@ -38,8 +38,8 @@ def iso(tmp_path):
     }
     patches = [patch.object(agent, k, v) for k, v in paths.items()]
     patches += [
-        patch.object(mcp_server, "SIMULATE", True),
-        patch.object(mcp_server._rp, "simulate", True),
+        # the single simulate switch (razorpay_client.force_simulate), patcher-style
+        patch("failsafe.razorpay_client._forced", [True]),
     ]
     for p in patches:
         p.start()
@@ -159,8 +159,7 @@ def test_agent_onetime_run_resets_the_guard(tmp_path):
         patch.object(agent_onetime, "AUDIT_PATH", tmp_path / "a.jsonl"),
         patch.object(agent_onetime, "CHECKPOINT_PATH", tmp_path / "c.jsonl"),
         patch.object(agent_onetime, "RESULTS_PATH", tmp_path / "R.md"),
-        patch.object(mcp_server, "SIMULATE", True),
-        patch.object(mcp_server._rp, "simulate", True),
+        mcp_server.simulate_mode(True),
     ):
         asyncio.run(agent_onetime.run())
     assert mcp_server.tool_level_guard_state() == (

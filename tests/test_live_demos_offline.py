@@ -24,6 +24,7 @@ from failsafe import (
     detection_live_demo,
     diagnosis_live_demo,
     mcp_server,
+    razorpay_client,
     real_mcp_demo,
     recovery_pipeline,
     route_demo,
@@ -281,13 +282,13 @@ def test_real_mcp_pick_sample_skips_missing_codes():
 
 
 def test_real_mcp_demo_refuses_without_real_keys(monkeypatch):
-    monkeypatch.setattr(real_mcp_demo, "SIMULATE", True)
+    monkeypatch.setattr(razorpay_client, "keys_configured", lambda: False)
     with pytest.raises(SystemExit, match="rzp_test_"):
         asyncio.run(real_mcp_demo.run(1))
 
 
 def test_real_mcp_demo_refuses_without_data(monkeypatch, tmp_path):
-    monkeypatch.setattr(real_mcp_demo, "SIMULATE", False)
+    monkeypatch.setattr(razorpay_client, "keys_configured", lambda: True)
     monkeypatch.setattr(real_mcp_demo, "DATA_PATH", tmp_path / "missing.json")
     with pytest.raises(SystemExit, match="No data"):
         asyncio.run(real_mcp_demo.run(1))
@@ -296,7 +297,7 @@ def test_real_mcp_demo_refuses_without_data(monkeypatch, tmp_path):
 def test_real_mcp_demo_writes_log_and_report(monkeypatch, tmp_path, capsys):
     # Pretend real keys exist so run() proceeds, but force the in-process
     # MCP server into SIMULATE so no call ever reaches Razorpay.
-    monkeypatch.setattr(real_mcp_demo, "SIMULATE", False)
+    monkeypatch.setattr(razorpay_client, "keys_configured", lambda: True)
     monkeypatch.setattr(real_mcp_demo, "LOG_PATH", tmp_path / "logs" / "real.jsonl")
     monkeypatch.setattr(real_mcp_demo, "RESULTS_PATH", tmp_path / "REAL_MCP_RESULTS.md")
     (tmp_path / "logs").mkdir()

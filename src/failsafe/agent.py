@@ -183,9 +183,9 @@ def _check_health(skip: bool = False):
     if not ok:
         raise SystemExit(f"Healthcheck failed: {msg} (use --skip-healthcheck to bypass)")
     print(f"[healthcheck] {msg}")
-    from failsafe.razorpay_client import SIMULATE
+    from failsafe.razorpay_client import simulate_mode
 
-    if not SIMULATE:
+    if not simulate_mode():
         try:
             subprocess.run(["docker", "--version"], capture_output=True, timeout=5, check=True)
             print("[healthcheck] docker reachable")

@@ -83,6 +83,25 @@ def reset_mcp_guard():
         yield
 
 
+@pytest.fixture(autouse=True)
+def no_real_razorpay_keys(monkeypatch):
+    """Hermetic Razorpay state: whatever a developer's local .env holds, every
+    test starts with NO keys configured and no simulate force active, and the
+    module's key values are restored afterwards (test_razorpay_client.py
+    reloads the module with fake keys; without this they would leak into
+    every later test). A test that needs "real" mode patches keys_configured
+    and stubs the SDK / official MCP call - nothing here can reach Razorpay."""
+    try:
+        from failsafe import razorpay_client
+    except ImportError:
+        yield
+        return
+    monkeypatch.setattr(razorpay_client, "KEY_ID", "")
+    monkeypatch.setattr(razorpay_client, "KEY_SECRET", "")
+    monkeypatch.setattr(razorpay_client, "_forced", [False])
+    yield
+
+
 @pytest.fixture
 def audit_logger(tmp_path):
     from failsafe.audit_log import AuditLogger

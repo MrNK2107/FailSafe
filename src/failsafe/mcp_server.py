@@ -42,9 +42,10 @@ from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
+from failsafe import razorpay_client as _razorpay_client
 from failsafe.gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
 from failsafe.paths import DATA_DIR
-from failsafe.razorpay_client import SIMULATE, RazorpayClient
+from failsafe.razorpay_client import RazorpayClient, force_simulate
 from failsafe.razorpay_mcp_client import call_official_tool
 
 DATA_PATH = DATA_DIR / "halted_subscriptions.json"
@@ -55,7 +56,7 @@ DATA_PATH = DATA_DIR / "halted_subscriptions.json"
 # unless a real one is provided.
 PARTNER_LINKED_ACCOUNT_ID = os.getenv("RAZORPAY_PARTNER_LINKED_ACCOUNT_ID", "acc_sim_partner001")
 
-server = MCPServer(name="razorpay-recovery-agent")
+server = MCPServer(name="failsafe-recovery-agent")
 _rp = RazorpayClient()
 
 
@@ -63,20 +64,19 @@ _rp = RazorpayClient()
 def simulate_mode(enabled: bool = True) -> Iterator[None]:
     """Explicitly set simulate mode for the money-moving tools, then restore it.
 
-    Two switches have to agree: this module's SIMULATE flag (checked by the
-    tools before routing to the official Razorpay MCP server) and `_rp.simulate`
-    (bound once when RazorpayClient was constructed at import time). Callers
-    that must never touch a real account - the live demos and the domain
-    agents' run() - use this instead of patching both by hand.
+    A thin alias for failsafe.razorpay_client.force_simulate(): there is ONE
+    dynamic switch (razorpay_client.simulate_mode()), read on every call by
+    these tools, by `_rp` and by every health check, so nothing here can hold
+    a stale copy. simulate_mode(False) lifts any outer force; with no real
+    keys configured the tools still simulate (there is nothing real to call).
     """
-    global SIMULATE
-    previous = (SIMULATE, _rp.simulate)
-    SIMULATE = enabled
-    _rp.simulate = enabled
-    try:
+    with force_simulate(enabled):
         yield
-    finally:
-        SIMULATE, _rp.simulate = previous
+
+
+def is_simulated() -> bool:
+    """Current answer of the single switch (same as razorpay_client.simulate_mode())."""
+    return _razorpay_client.simulate_mode()
 
 
 class ToolLevelCapExceeded(Exception):
@@ -153,7 +153,7 @@ def list_halted_subscriptions() -> list[dict]:
 async def create_payment_link(subscription_id: str, amount_paise: int, description: str) -> dict:
     """Create a Razorpay payment link to nudge a customer to fix payment."""
     _enforce_tool_level_cap(subscription_id, "create_payment_link", amount_paise)
-    if SIMULATE:
+    if _razorpay_client.simulate_mode():
         return _rp.create_payment_link(amount_paise, description, subscription_id)
     result = await call_official_tool(
         "create_payment_link",
@@ -161,7 +161,7 @@ async def create_payment_link(subscription_id: str, amount_paise: int, descripti
             "amount": amount_paise,
             "currency": "INR",
             "description": description,
-            "notes": {"subscription_id": subscription_id, "source": "recovery-agent"},
+            "notes": {"subscription_id": subscription_id, "source": "failsafe-agent"},
         },
     )
     result["simulated"] = False
@@ -173,14 +173,14 @@ async def create_payment_link(subscription_id: str, amount_paise: int, descripti
 async def create_retry_order(subscription_id: str, amount_paise: int) -> dict:
     """Create a Razorpay order representing a retry attempt."""
     _enforce_tool_level_cap(subscription_id, "create_retry_order", amount_paise)
-    if SIMULATE:
+    if _razorpay_client.simulate_mode():
         return _rp.create_retry_order(amount_paise, subscription_id)
     result = await call_official_tool(
         "create_order",
         {
             "amount": amount_paise,
             "currency": "INR",
-            "notes": {"subscription_id": subscription_id, "source": "recovery-agent"},
+            "notes": {"subscription_id": subscription_id, "source": "failsafe-agent"},
         },
     )
     result["simulated"] = False

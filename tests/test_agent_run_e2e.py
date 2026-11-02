@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from failsafe import agent, mcp_server, recovery_pipeline
+from failsafe import agent, recovery_pipeline
 
 
 def _subs():
@@ -62,8 +62,7 @@ def isolated_agent(tmp_path):
     }
     patches = [patch.object(agent, k, v) for k, v in paths.items()]
     patches += [
-        patch.object(mcp_server, "SIMULATE", True),
-        patch.object(mcp_server._rp, "simulate", True),
+        patch("failsafe.razorpay_client._forced", [True]),  # the single simulate switch
         patch.object(
             recovery_pipeline,
             "proposer",

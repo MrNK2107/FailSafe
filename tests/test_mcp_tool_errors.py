@@ -35,7 +35,7 @@ OK = {"action": "delayed_retry", "reasoning": "ok"}
 
 @pytest.fixture(autouse=True)
 def _sim():
-    with patch.object(mcp_server, "SIMULATE", True), patch.object(mcp_server._rp, "simulate", True):
+    with mcp_server.simulate_mode(True):
         mcp_server.reset_tool_level_guard()
         previous = recovery_pipeline.set_proposer(MagicMock(return_value=OK))
         recovery_pipeline.reset_circuit_breaker()

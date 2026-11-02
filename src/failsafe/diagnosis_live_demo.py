@@ -44,23 +44,15 @@ against real test-mode keys already exist elsewhere in this project
 (REAL_MCP_RESULTS.md); duplicating that here would add cost/objects with
 no bearing on what this script measures.
 
-Patches `mcp_server._rp.simulate` directly, NOT just `mcp_server.SIMULATE`
-- found the hard way, mid-development of this script, that patching only
-the module-level `SIMULATE` name is insufficient: `_rp = RazorpayClient()`
-is constructed once at mcp_server.py IMPORT time, and its `create_payment_link`/
-`create_retry_order` methods branch on `self.simulate` (bound at that
-construction, from whatever `.env` keys were present then), not on the
-module-level name. With real `rzp_test_` keys in `.env` (as this project's
-own does), patching only `mcp_server.SIMULATE` still routed calls into
-`_rp.create_payment_link(...)` (mcp_server.py's own top-level branch
-correctly saw the patched value) but `_rp` itself then made a REAL API
-call, because its own `self.simulate` was never patched - confirmed
-directly: a first live run of this script under that bug hit a real
-"test mode limit of 30 reached for payment_link" ServerError. This is a
-pre-existing gap in this project's own SIMULATE-patching convention
-(tests/test_idempotency_integration.py patches the same, narrower target)
-that this script's development surfaced but does not fix elsewhere -
-noted here and in BUILD_LOG.md §14 rather than silently worked around.
+Historical note, kept as a warning: forcing simulate used to require
+patching TWO things (`mcp_server.SIMULATE` plus `mcp_server._rp.simulate`)
+because _rp's simulate state was a snapshot bound at construction - patch
+only the first and _rp still made a REAL API call, which once burned a
+real "test mode limit of 30 reached for payment_link" ServerError. Simulate
+state now lives in ONE dynamic knob (failsafe.razorpay_client.simulate_mode),
+forced with force_simulate() (mcp_server.simulate_mode() delegates to it).
+The failure mode above is structurally impossible now - there is no second
+copy left to drift.
 
 Usage: python -m failsafe.diagnosis_live_demo [N]   (default N=30)
 """

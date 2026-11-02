@@ -16,7 +16,7 @@ def _reload_razorpay_client(monkeypatch, key_id, key_secret):
 
 def test_simulate_true_when_no_keys(monkeypatch):
     rc = _reload_razorpay_client(monkeypatch, "", "")
-    assert rc.SIMULATE is True
+    assert rc.simulate_mode() is True and rc.keys_configured() is False
     client = rc.RazorpayClient()
     assert client.simulate is True
     result = client.create_payment_link(10000, "desc", "sub_1")
@@ -26,7 +26,7 @@ def test_simulate_true_when_no_keys(monkeypatch):
 
 def test_simulate_false_with_test_keys(monkeypatch):
     rc = _reload_razorpay_client(monkeypatch, "rzp_test_abc", "secret123")
-    assert rc.SIMULATE is False
+    assert rc.simulate_mode() is False and rc.keys_configured() is True
     client = rc.RazorpayClient()
     assert client.simulate is False
     fake_client = MagicMock()
@@ -34,7 +34,7 @@ def test_simulate_false_with_test_keys(monkeypatch):
         "id": "plink_real",
         "short_url": "https://rzp.io/i/real",
     }
-    monkeypatch.setattr(rc, "_client", fake_client)
+    client._sdk = fake_client
     result = client.create_payment_link(10000, "desc", "sub_1")
     assert result["simulated"] is False
     assert result["id"] == "plink_real"
@@ -73,8 +73,8 @@ def test_create_retry_order_real(monkeypatch):
     rc = _reload_razorpay_client(monkeypatch, "rzp_test_abc", "secret123")
     fake_client = MagicMock()
     fake_client.order.create.return_value = {"id": "order_real", "amount": 5000}
-    monkeypatch.setattr(rc, "_client", fake_client)
     client = rc.RazorpayClient()
+    client._sdk = fake_client
     result = client.create_retry_order(5000, "sub_1")
     assert result["simulated"] is False
     assert result["id"] == "order_real"
@@ -84,8 +84,8 @@ def test_razorpay_errors_propagate_or_handled(monkeypatch):
     rc = _reload_razorpay_client(monkeypatch, "rzp_test_abc", "secret123")
     fake_client = MagicMock()
     fake_client.payment_link.create.side_effect = Exception("razorpay error: auth failed")
-    monkeypatch.setattr(rc, "_client", fake_client)
     client = rc.RazorpayClient()
+    client._sdk = fake_client
     with pytest.raises(Exception, match="razorpay error"):
         client.create_payment_link(10000, "desc", "sub_1")
 
@@ -94,7 +94,7 @@ def test_razorpay_errors_propagate_or_handled(monkeypatch):
 async def test_call_official_tool_simulate_raises(monkeypatch):
     from failsafe import razorpay_mcp_client
 
-    monkeypatch.setattr(razorpay_mcp_client, "SIMULATE", True)
+    monkeypatch.setattr(razorpay_mcp_client, "simulate_mode", lambda: True)
     with pytest.raises(RuntimeError, match="requires real rzp_test_"):
         await razorpay_mcp_client.call_official_tool("create_order", {"amount": 100})
 
@@ -103,7 +103,7 @@ async def test_call_official_tool_simulate_raises(monkeypatch):
 async def test_call_official_tool_success(monkeypatch):
     from failsafe import razorpay_mcp_client
 
-    monkeypatch.setattr(razorpay_mcp_client, "SIMULATE", False)
+    monkeypatch.setattr(razorpay_mcp_client, "simulate_mode", lambda: False)
     mock_client_instance = AsyncMock()
     mock_result = MagicMock()
     mock_result.content = [MagicMock(text=json.dumps({"id": "order_123"}))]
@@ -120,7 +120,7 @@ async def test_call_official_tool_success(monkeypatch):
 async def test_call_official_tool_invalid_json_returns_raw(monkeypatch):
     from failsafe import razorpay_mcp_client
 
-    monkeypatch.setattr(razorpay_mcp_client, "SIMULATE", False)
+    monkeypatch.setattr(razorpay_mcp_client, "simulate_mode", lambda: False)
     mock_client_instance = AsyncMock()
     mock_result = MagicMock()
     mock_result.content = [MagicMock(text="not json at all")]
@@ -138,7 +138,7 @@ async def test_call_official_tool_invalid_json_returns_raw(monkeypatch):
 async def test_call_official_tool_empty_content(monkeypatch):
     from failsafe import razorpay_mcp_client
 
-    monkeypatch.setattr(razorpay_mcp_client, "SIMULATE", False)
+    monkeypatch.setattr(razorpay_mcp_client, "simulate_mode", lambda: False)
     mock_client_instance = AsyncMock()
     mock_result = MagicMock()
     mock_result.content = []
@@ -155,8 +155,8 @@ def test_route_split_real_sends_transfer_to_linked_account(monkeypatch):
     rc = _reload_razorpay_client(monkeypatch, "rzp_test_abc", "secret123")
     fake_client = MagicMock()
     fake_client.order.create.return_value = {"id": "order_route_real", "amount": 10000}
-    monkeypatch.setattr(rc, "_client", fake_client)
     client = rc.RazorpayClient()
+    client._sdk = fake_client
     result = client.create_route_split_order(10000, "sub_9", "acc_partner", 500)
     assert result == {"id": "order_route_real", "amount": 10000, "simulated": False}
     payload = fake_client.order.create.call_args.args[0]
@@ -164,3 +164,58 @@ def test_route_split_real_sends_transfer_to_linked_account(monkeypatch):
     assert payload["transfers"] == [
         {"account": "acc_partner", "amount": 500, "currency": "INR", "on_hold": False}
     ]
+
+
+@pytest.mark.parametrize(
+    ("key_id", "key_secret"),
+    [
+        ("rzp_test_xxxxxxxxxxxxxx", "xxxxxxxxxxxxxxxxxxxxxxxx"),  # verbatim .env.example
+        ("rzp_test_xxxxxxxxxxxxxx", "a_real_looking_secret"),
+        ("rzp_test_RealLookingId1", "xxxxxxxxxxxxxxxxxxxxxxxx"),
+        ("rzp_test_XXXXXXXXXXXXXX", "XXXXXXXXXXXXXXXX"),
+    ],
+)
+def test_placeholder_keys_count_as_unset(monkeypatch, key_id, key_secret):
+    """`cp .env.example .env` must leave SIMULATE on, not send fake credentials."""
+    rc = _reload_razorpay_client(monkeypatch, key_id, key_secret)
+    assert rc.keys_configured() is False
+    assert rc.simulate_mode() is True
+    assert rc.RazorpayClient().create_retry_order(100, "sub_p")["simulated"] is True
+
+
+def test_env_example_ships_no_active_placeholder_keys():
+    from pathlib import Path
+
+    example = Path(__file__).resolve().parent.parent / ".env.example"
+    active = [
+        line
+        for line in example.read_text(encoding="utf-8").splitlines()
+        if line.startswith(("RAZORPAY_KEY_ID=", "RAZORPAY_KEY_SECRET="))
+    ]
+    assert active == []
+
+
+def test_sdk_is_built_lazily_and_notes_carry_failsafe_brand(monkeypatch):
+    rc = _reload_razorpay_client(monkeypatch, "rzp_test_abc", "secret123")
+    built = MagicMock()
+    with patch.object(rc.razorpay, "Client", return_value=built) as ctor:
+        client = rc.RazorpayClient()
+        ctor.assert_not_called()  # importing/constructing never builds the SDK
+        built.order.create.return_value = {"id": "order_x"}
+        built.payment_link.create.return_value = {"id": "plink_x"}
+        client.create_retry_order(100, "sub_b")
+        client.create_payment_link(100, "d", "sub_b")
+        client.create_route_split_order(100, "sub_b", "acc_1", 10)
+        ctor.assert_called_once_with(auth=("rzp_test_abc", "secret123"))
+    assert built.order.create.call_args_list[0].args[0]["notes"]["source"] == "failsafe-agent"
+    assert built.payment_link.create.call_args.args[0]["notes"]["source"] == "failsafe-agent"
+    route_notes = built.order.create.call_args_list[1].args[0]["notes"]
+    assert route_notes["source"] == "failsafe-agent-route-demo"
+
+
+def test_force_simulate_overrides_real_keys(monkeypatch):
+    rc = _reload_razorpay_client(monkeypatch, "rzp_test_abc", "secret123")
+    with rc.force_simulate():
+        assert rc.simulate_mode() is True
+        assert rc.RazorpayClient().create_retry_order(100, "s")["simulated"] is True
+    assert rc.simulate_mode() is False
