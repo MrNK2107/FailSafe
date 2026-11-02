@@ -15,4 +15,33 @@ Run any pipeline stage as a module, e.g.::
     python -m failsafe integrated [N]
 """
 
-__version__ = "1.0.0"
+from importlib import metadata as _metadata
+from pathlib import Path as _Path
+
+# Keep in sync with pyproject.toml; used only when neither source below exists.
+_PYPROJECT_VERSION = "1.1.0"
+
+
+def _resolve_version(checkout_root: _Path) -> str:
+    """Version of the code actually being imported.
+
+    1. A source checkout (pyproject.toml next to src/): read it there. This
+       beats installed metadata, which can belong to a stale editable install
+       of a different checkout.
+    2. Otherwise the installed distribution's metadata (importlib.metadata).
+    3. Otherwise the pinned fallback above.
+    """
+    pyproject = checkout_root / "pyproject.toml"
+    if pyproject.is_file():
+        import tomllib
+
+        project = tomllib.loads(pyproject.read_text(encoding="utf-8")).get("project", {})
+        if project.get("name") == "failsafe" and project.get("version"):
+            return str(project["version"])
+    try:
+        return _metadata.version("failsafe")
+    except _metadata.PackageNotFoundError:
+        return _PYPROJECT_VERSION
+
+
+__version__ = _resolve_version(_Path(__file__).resolve().parent.parent.parent)

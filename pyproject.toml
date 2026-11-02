@@ -35,6 +35,7 @@ dev = [
 # `python -m failsafe <command>` (dispatcher) or `python -m failsafe.<module>`.
 [project.scripts]
 failsafe = "failsafe.__main__:main"
+failsafe-agent = "failsafe.agent:main"
 failsafe-replay = "failsafe.replay:main"
 failsafe-trace = "failsafe.decision_trace:main"
 failsafe-console = "failsafe.console:main"

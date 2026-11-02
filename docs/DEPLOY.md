@@ -14,7 +14,8 @@ The console is read-only. It never calls the LLM or Razorpay, and never writes t
 ```bash
 docker build -t failsafe .
 
-# console on :8080 (serves the committed sample logs)
+# console on :8080 (serves the committed sample logs); --host/--port override HOST/PORT
+#   docker run --rm -p 9000:9000 failsafe python -m failsafe console --port 9000
 docker run --rm -p 8080:8080 failsafe
 
 # console over your own logs (mount them read-only)
@@ -30,15 +31,20 @@ docker run --rm failsafe python scripts/offline_demo.py --n 12
 
 The image is `python:3.12-slim`. It runs as a non-root user (`failsafe`, uid 10001), exposes port 8080, and has a `HEALTHCHECK` on `/healthz`. Ollama is not bundled.
 
+`/app` is root-owned and read-only for that user. Everything the pipelines write lives under `/app/logs` (owned by `failsafe`): audit logs, checkpoints and, through `FAILSAFE_RESULTS_DIR=/app/logs/results`, the results files (`RESULTS.md`, `REPORT.html`, ...). Mount a volume at `/app/logs` to keep them. If you mount a fresh host directory there, create `results/` in it and make it writable by uid 10001.
+
 ## Environment
 
 | Variable | Used by | Default | Notes |
 |---|---|---|---|
-| `RAZORPAY_KEY_ID` | agent | empty → SIMULATE | Must be `rzp_test_…`. Never use live keys. |
+| `RAZORPAY_KEY_ID` | agent | empty → SIMULATE | Must be `rzp_test_…`. Never use live keys. The `.env.example` placeholders (`xxxx`) count as unset. |
 | `RAZORPAY_KEY_SECRET` | agent | empty | Store it as a secret, not in the image. |
-| `RAZORPAY_PARTNER_LINKED_ACCOUNT_ID` | `route_demo` | `acc_sim_partner001` | Route split demo only |
+| `RAZORPAY_PARTNER_LINKED_ACCOUNT_ID` | `route_demo` | `acc_sim_partner001` | Route split demo only. A real onboarded Linked Account id (`acc_…`); only used with `route_demo --live` and real test keys |
 | `OLLAMA_HOST` | agent | `http://localhost:11434` | The agent fails fast if Ollama is unreachable (`--skip-healthcheck` to bypass) |
 | `OLLAMA_MODEL` | agent | `llama3.1:8b` | |
+| `FAILSAFE_INVALID_ACTION_THRESHOLD` | agent | `5` | Consecutive invalid (non-enum) LLM actions that trip the fallback circuit breaker. Missing, non-integer or < 1 falls back to 5 |
+| `FAILSAFE_RESULTS_DIR` | agent, demos, report | project root (`/app/logs/results` in the image) | Where `RESULTS*.md`, `REPORT.html`, `POLICY_DASHBOARD.html` are written |
+| `FAILSAFE_HOME` | everything | the source checkout | Root holding `config/`, `data/`, `logs/`. Set it when running from a wheel install |
 | `FAILSAFE_AUDIT_LOG` | console | `logs/audit_log.jsonl` | Any `gate.py`-domain log (subscriptions, one-time) |
 | `FAILSAFE_POLICY` | console | `config/decline_policy.json` | Point it at a candidate to serve a what-if |
 | `FAILSAFE_DATA` | console | `data/halted_subscriptions.json` | Fills gate inputs that older logs did not record |

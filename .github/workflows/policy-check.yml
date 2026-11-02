@@ -17,6 +17,8 @@ on:
       - "src/failsafe/base_gate.py"
       - "src/failsafe/decline_codes.py"
       - "src/failsafe/replay.py"
+      - "src/failsafe/policy_loader.py"
+      - "src/failsafe/paths.py"
       - "logs/audit_log*.jsonl"
   push:
     branches: [main]

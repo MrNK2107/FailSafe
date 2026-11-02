@@ -33,11 +33,11 @@ from failsafe import razorpay_client
 from failsafe.decline_codes import RecoveryAction, get_decline_code
 from failsafe.gate import Gate
 from failsafe.mcp_server import server as mcp_server
-from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
+from failsafe.paths import DATA_DIR, LOGS_DIR, RESULTS_DIR
 
 DATA_PATH = DATA_DIR / "halted_subscriptions.json"
 LOG_PATH = LOGS_DIR / "real_mcp_server_run.jsonl"
-RESULTS_PATH = PROJECT_ROOT / "REAL_MCP_RESULTS.md"
+RESULTS_PATH = RESULTS_DIR / "REAL_MCP_RESULTS.md"
 
 ACTION_TO_TOOL = {
     RecoveryAction.IMMEDIATE_RETRY: "create_retry_order",

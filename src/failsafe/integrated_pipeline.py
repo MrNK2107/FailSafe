@@ -84,7 +84,7 @@ from failsafe.decline_codes import RecoveryAction
 from failsafe.gate import Gate
 from failsafe.mcp_server import server as mcp_server
 from failsafe.ollama_client import non_negative_int
-from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
+from failsafe.paths import DATA_DIR, LOGS_DIR, RESULTS_DIR
 from failsafe.receivables_agent import ACTIONABLE as _RECEIVABLES_ACTIONABLE
 from failsafe.receivables_agent import process_one as _receivables_process_one
 from failsafe.receivables_gate import ReceivableGate
@@ -93,7 +93,7 @@ from failsafe.recovery_pipeline import count_prior_attempts, reset_circuit_break
 
 INTEGRATED_AUDIT_PATH = LOGS_DIR / "audit_log_integrated.jsonl"
 INTEGRATED_CHECKPOINT_PATH = LOGS_DIR / "integrated_checkpoint.jsonl"
-INTEGRATED_RESULTS_PATH = PROJECT_ROOT / "INTEGRATED_RESULTS.md"
+INTEGRATED_RESULTS_PATH = RESULTS_DIR / "INTEGRATED_RESULTS.md"
 
 _SUBSCRIPTION_LIKE_ACTIONABLE = {
     RecoveryAction.IMMEDIATE_RETRY.value,

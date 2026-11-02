@@ -29,10 +29,10 @@ Usage: python -m failsafe.generate_policy_dashboard
 import html
 import json
 
-from failsafe.paths import CONFIG_DIR, PROJECT_ROOT
+from failsafe.paths import CONFIG_DIR, RESULTS_DIR
 
 POLICY_PATH = CONFIG_DIR / "decline_policy.json"
-DASHBOARD_PATH = PROJECT_ROOT / "POLICY_DASHBOARD.html"
+DASHBOARD_PATH = RESULTS_DIR / "POLICY_DASHBOARD.html"
 
 SOURCE_COLORS = {
     "customer": "#2B84EB",

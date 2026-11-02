@@ -70,12 +70,12 @@ from failsafe.decline_codes import RecoveryAction, get_decline_code
 from failsafe.gate import Gate
 from failsafe.mcp_server import server as mcp_server_instance
 from failsafe.ollama_client import DEFAULT_SITUATION
-from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
+from failsafe.paths import DATA_DIR, LOGS_DIR, RESULTS_DIR
 from failsafe.recovery_pipeline import process_record
 
 DATA_PATH = DATA_DIR / "halted_subscriptions.json"
 AUDIT_PATH = LOGS_DIR / "diagnosis_demo_audit.jsonl"
-RESULTS_PATH = PROJECT_ROOT / "DIAGNOSIS_DEMO_RESULTS.md"
+RESULTS_PATH = RESULTS_DIR / "DIAGNOSIS_DEMO_RESULTS.md"
 
 ID_FIELD = "subscription_id"
 

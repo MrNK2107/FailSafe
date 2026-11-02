@@ -50,7 +50,7 @@ from failsafe.mcp_server import seed_tool_level_guard
 from failsafe.mcp_server import server as mcp_server
 from failsafe.mcp_tool_errors import render_tool_error_lines
 from failsafe.ollama_client import DEFAULT_SITUATION
-from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
+from failsafe.paths import DATA_DIR, LOGS_DIR, RESULTS_DIR
 from failsafe.recovery_pipeline import (
     count_prior_attempts,
     process_record,
@@ -62,7 +62,7 @@ from failsafe.recovery_pipeline import (
 DATA_PATH = DATA_DIR / "halted_subscriptions.json"
 AUDIT_PATH = LOGS_DIR / "audit_log.jsonl"
 CHECKPOINT_PATH = LOGS_DIR / "results_checkpoint.jsonl"
-RESULTS_PATH = PROJECT_ROOT / "RESULTS.md"
+RESULTS_PATH = RESULTS_DIR / "RESULTS.md"
 
 ID_FIELD = "subscription_id"
 

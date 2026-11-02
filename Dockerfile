@@ -12,6 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HOST=0.0.0.0 \
     PORT=8080 \
     FAILSAFE_OUT_DIR=/tmp/failsafe-pages \
+    FAILSAFE_RESULTS_DIR=/app/logs/results \
     PYTHONPATH=/app/src
 
 WORKDIR /app
@@ -27,7 +28,10 @@ COPY logs/ logs/
 COPY scripts/ scripts/
 COPY examples/ examples/
 
-RUN useradd --create-home --uid 10001 failsafe && chown -R failsafe:failsafe /app/logs
+# /app stays root-owned (read-only code/config/data); everything the pipelines
+# write goes under /app/logs: audit logs, checkpoints and, via
+# FAILSAFE_RESULTS_DIR, the RESULTS*.md / REPORT.html files.
+RUN useradd --create-home --uid 10001 failsafe \n    && mkdir -p /app/logs/results \n    && chown -R failsafe:failsafe /app/logs
 USER failsafe
 
 EXPOSE 8080

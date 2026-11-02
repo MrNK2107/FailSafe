@@ -14,7 +14,7 @@ from failsafe.mcp_server import seed_tool_level_guard
 from failsafe.mcp_server import server as mcp_server
 from failsafe.mcp_tool_errors import render_tool_error_lines
 from failsafe.ollama_client import require_ollama
-from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
+from failsafe.paths import DATA_DIR, LOGS_DIR, RESULTS_DIR
 from failsafe.recovery_pipeline import (
     process_record,
     render_corrected_override_line,
@@ -25,7 +25,7 @@ from failsafe.recovery_pipeline import (
 DATA_PATH = DATA_DIR / "failed_onetime_payments.json"
 AUDIT_PATH = LOGS_DIR / "audit_log_onetime.jsonl"
 CHECKPOINT_PATH = LOGS_DIR / "results_checkpoint_onetime.jsonl"
-RESULTS_PATH = PROJECT_ROOT / "RESULTS_ONETIME.md"
+RESULTS_PATH = RESULTS_DIR / "RESULTS_ONETIME.md"
 
 ID_FIELD = "payment_id"
 

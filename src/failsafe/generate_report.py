@@ -15,10 +15,10 @@ Usage: python -m failsafe.generate_report
 import html
 import json
 
-from failsafe.paths import LOGS_DIR, PROJECT_ROOT
+from failsafe.paths import LOGS_DIR, RESULTS_DIR
 
 AUDIT_PATH = LOGS_DIR / "audit_log.jsonl"
-REPORT_PATH = PROJECT_ROOT / "REPORT.html"
+REPORT_PATH = RESULTS_DIR / "REPORT.html"
 
 # Same semantic mapping as generate_policy_dashboard.py - one product palette.
 ACTION_COLORS = {

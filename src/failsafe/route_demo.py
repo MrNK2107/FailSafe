@@ -44,10 +44,10 @@ from failsafe.audit_log import AuditLogger
 from failsafe.gate import MAX_ACTION_AMOUNT_PAISE
 from failsafe.mcp_server import PARTNER_LINKED_ACCOUNT_ID, simulate_mode
 from failsafe.mcp_server import server as mcp_server
-from failsafe.paths import LOGS_DIR, PROJECT_ROOT
+from failsafe.paths import LOGS_DIR, RESULTS_DIR
 
 AUDIT_PATH = LOGS_DIR / "audit_log.jsonl"
-RESULTS_PATH = PROJECT_ROOT / "ROUTE_RESULTS.md"
+RESULTS_PATH = RESULTS_DIR / "ROUTE_RESULTS.md"
 
 PARTNER_SHARE_PCT = 0.05  # referral partner earns 5% of the recovered amount
 

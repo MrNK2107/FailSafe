@@ -94,12 +94,12 @@ from failsafe.mcp_tool_errors import (
     tool_call_failed,
 )
 from failsafe.ollama_client import non_negative_int, require_ollama
-from failsafe.paths import DATA_DIR, LOGS_DIR, PROJECT_ROOT
+from failsafe.paths import DATA_DIR, LOGS_DIR, RESULTS_DIR
 
 DATA_PATH = DATA_DIR / "abandoned_checkouts.json"
 AUDIT_PATH = LOGS_DIR / "audit_log_checkout_abandonment.jsonl"
 CHECKPOINT_PATH = LOGS_DIR / "results_checkpoint_checkout_abandonment.jsonl"
-RESULTS_PATH = PROJECT_ROOT / "CHECKOUT_ABANDONMENT_RESULTS.md"
+RESULTS_PATH = RESULTS_DIR / "CHECKOUT_ABANDONMENT_RESULTS.md"
 
 ID_FIELD = "cart_id"
 
