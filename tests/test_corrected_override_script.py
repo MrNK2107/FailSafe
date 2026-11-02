@@ -57,3 +57,17 @@ def test_render_writes_both_metrics(tmp_path):
     )
     assert "| Subs | 2/2 (100.0%) | 1/1 (100.0%) | 1 |" in md
     assert "(no log at none.jsonl)" in md
+
+
+def test_row_labels_say_latest_run_and_point_to_metrics_for_cumulative():
+    labels = [label for label, _path, _id in com.SOURCES]
+    assert all("latest run per record" in label for label in labels)
+    assert all("scripts/metrics.py" in label for label in labels)
+    assert "cumulative 6/326" in labels[0]
+
+
+def test_main_writes_lf_line_endings(monkeypatch, tmp_path):
+    monkeypatch.setattr(com, "ROOT", tmp_path)
+    monkeypatch.setattr(com, "render", lambda: "a\nb\n")
+    com.main()
+    assert (tmp_path / "OVERRIDE_METRIC_CORRECTED.md").read_bytes() == b"a\nb\n"

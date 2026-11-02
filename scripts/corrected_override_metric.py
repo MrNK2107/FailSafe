@@ -33,12 +33,14 @@ NO_PROPOSAL = {"llm_parse_failure", "llm_invalid_action"}
 
 SOURCES = [
     (
-        "Subscriptions (RESULTS.md / README / METRICS.md)",
+        "Subscriptions, latest run per record (RESULTS.md / README); "
+        "cumulative 6/326 over all runs: scripts/metrics.py",
         ROOT / "logs" / "audit_log.jsonl",
         "subscription_id",
     ),
     (
-        "One-time payments (RESULTS_ONETIME.md)",
+        "One-time payments, latest run per record (RESULTS_ONETIME.md); "
+        "cumulative 7/55 over all runs: scripts/metrics.py",
         ROOT / "logs" / "audit_log_onetime.jsonl",
         "payment_id",
     ),
@@ -108,7 +110,8 @@ def render(sources=SOURCES) -> str:
 
 def main() -> None:
     out = ROOT / "OVERRIDE_METRIC_CORRECTED.md"
-    out.write_text(render(), encoding="utf-8")
+    # newline="\n": keep LF on every platform (the committed file is LF).
+    out.write_text(render(), encoding="utf-8", newline="\n")
     print(out.read_text(encoding="utf-8"))
 
 

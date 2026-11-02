@@ -9,5 +9,5 @@ Published numbers elsewhere use the legacy metric.
 
 | Run | Legacy override rate | Corrected: override_rate_of_proposals | No usable proposal |
 |---|---|---|---|
-| Subscriptions (RESULTS.md / README / METRICS.md) | 3/150 (2.0%) | 3/150 (2.0%) | 0 |
-| One-time payments (RESULTS_ONETIME.md) | 4/30 (13.3%) | 4/30 (13.3%) | 0 |
+| Subscriptions, latest run per record (RESULTS.md / README); cumulative 6/326 over all runs: scripts/metrics.py | 3/150 (2.0%) | 3/150 (2.0%) | 0 |
+| One-time payments, latest run per record (RESULTS_ONETIME.md); cumulative 7/55 over all runs: scripts/metrics.py | 4/30 (13.3%) | 4/30 (13.3%) | 0 |
