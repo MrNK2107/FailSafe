@@ -132,7 +132,7 @@ def test_main_serves_until_interrupted(monkeypatch, tmp_path, capsys):
             FakeServer.closed = True
 
     monkeypatch.setattr(console, "make_server", lambda s: FakeServer())
-    assert console.main({"FAILSAFE_OUT_DIR": str(tmp_path)}) == 0
+    assert console.main([], env={"FAILSAFE_OUT_DIR": str(tmp_path)}) == 0
     assert FakeServer.closed and "http://127.0.0.1:1234" in capsys.readouterr().out
 
 
@@ -212,3 +212,42 @@ def test_whatif_api_server_errors(served, tmp_path):
     s.policy = console.replay.DEFAULT_POLICY
     audit.unlink()
     assert post(base + "/api/whatif", b"{}")[0] == 503
+
+
+def test_console_help_via_dispatcher_prints_usage_without_serving(monkeypatch, capsys):
+    from failsafe import __main__ as cli
+
+    monkeypatch.setattr(console, "make_server", lambda s: pytest.fail("--help must not serve"))
+    assert cli.main(["console", "--help"]) == 0
+    out = capsys.readouterr().out
+    assert "--host" in out and "--port" in out and "FAILSAFE_OUT_DIR" in out
+
+
+def test_console_flags_override_env_defaults(monkeypatch, tmp_path):
+    seen = {}
+
+    class FakeServer:
+        server_address = ("0.0.0.0", 9100)
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    def fake_make_server(s):
+        seen["s"] = s
+        return FakeServer()
+
+    monkeypatch.setattr(console, "make_server", fake_make_server)
+    env = {"FAILSAFE_OUT_DIR": str(tmp_path), "HOST": "127.0.0.1", "PORT": "8123"}
+    assert console.main(["--host", "0.0.0.0", "--port", "9100"], env=env) == 0
+    assert (seen["s"].host, seen["s"].port) == ("0.0.0.0", 9100)
+    assert console.main([], env=env) == 0
+    assert (seen["s"].host, seen["s"].port) == ("127.0.0.1", 8123)
+
+
+def test_console_rejects_non_numeric_port_flag(capsys):
+    with pytest.raises(SystemExit) as exc:
+        console.main(["--port", "abc"], env={})
+    assert exc.value.code == 2

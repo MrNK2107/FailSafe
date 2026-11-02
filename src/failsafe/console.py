@@ -8,6 +8,7 @@ LLM, no Razorpay, no writes to the audit log. Put it behind your own auth
 before exposing it beyond localhost: it shows record ids and amounts.
 
     python -m failsafe.console                 # http://127.0.0.1:8080
+    python -m failsafe console --host 0.0.0.0 --port 9000
     PORT=9000 HOST=0.0.0.0 python -m failsafe.console
 
 Routes:
@@ -31,11 +32,13 @@ Environment (all optional):
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import tempfile
 import threading
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -313,8 +316,35 @@ def make_server(s: Settings) -> ThreadingHTTPServer:
     return ThreadingHTTPServer((s.host, s.port), make_handler(Pages(s)))
 
 
-def main(env: dict | None = None) -> int:
+def build_parser(env: dict | None = None) -> argparse.ArgumentParser:
+    env = dict(os.environ if env is None else env)
+    parser = argparse.ArgumentParser(
+        prog="python -m failsafe console",
+        description="Serve the read-only FailSafe console (decision trace, report, "
+        "policy view, replay API).",
+        epilog="Environment: FAILSAFE_AUDIT_LOG, FAILSAFE_POLICY, FAILSAFE_DATA, "
+        "FAILSAFE_OUT_DIR, HOST, PORT (flags override HOST/PORT).",
+    )
+    parser.add_argument(
+        "--host",
+        default=env.get("HOST", "127.0.0.1"),
+        help="bind address (default: $HOST or 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="port (default: $PORT or 8080; 0 picks a free port)",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None, env: dict | None = None) -> int:
+    args = build_parser(env).parse_args(argv)
     s = Settings.from_env(env)
+    s.host = args.host
+    if args.port is not None:
+        s.port = args.port
     httpd = make_server(s)
     host, port = str(httpd.server_address[0]), httpd.server_address[1]
     print(f"FailSafe console on http://{host}:{port}  (audit log: {s.audit}, pages in {s.out})")
